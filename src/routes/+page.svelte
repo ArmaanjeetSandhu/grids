@@ -97,6 +97,7 @@
 	let winW = $state(1200);
 	const narrow = $derived(winW <= 640);
 	const PANEL_GAP = 24;
+	const GUTTER = { x: 4, y: 4 };
 
 	let stageW = $state(800);
 	let stageH = $state(600);
@@ -118,7 +119,7 @@
 	const room: { w: number; h: number } = $derived.by(() => {
 		const side = numbering && !narrow ? panelW + PANEL_GAP : 0;
 		const below = numbering && narrow ? panelH + PANEL_GAP : 0;
-		return { w: stageW - 48 - side, h: stageH - 48 - below };
+		return { w: stageW - 48 - side - GUTTER.x, h: stageH - 48 - below - GUTTER.y };
 	});
 
 	const cellDev = $derived.by(() => {
@@ -127,6 +128,13 @@
 		return Math.max(Math.round(12 * dpr), Math.min(Math.round(64 * dpr), Math.floor(fit * dpr)));
 	});
 	const cell = $derived(cellDev / dpr);
+	const labelSize = $derived(Math.max(9, Math.min(13, cell * 0.34)));
+
+	const rowLabels = $derived(Array.from({ length: size?.rows ?? 0 }, (_, i) => i));
+	const colLabels = $derived(Array.from({ length: size?.cols ?? 0 }, (_, i) => i));
+
+	let hoverKey = $state<string | null>(null);
+	const hoverPos = $derived(hoverKey ? parseKey(hoverKey) : null);
 
 	const linesPath = $derived.by(() => {
 		if (!size) return '';
@@ -205,6 +213,7 @@
 		pen = 'white';
 		axis = 'across';
 		editing = null;
+		hoverKey = null;
 		sizeInput = { rows: p.rows, cols: p.cols };
 		size = { rows: p.rows, cols: p.cols };
 	}
@@ -280,6 +289,7 @@
 	}
 
 	function onCellEnter(e: PointerEvent, key: string) {
+		hoverKey = key;
 		if (painting && e.buttons & 1) paint(key);
 	}
 
@@ -515,9 +525,24 @@
 						class="sheet"
 						style:width="{size.cols * cell}px"
 						style:height="{size.rows * cell}px"
+						style:margin="{GUTTER.y}px 0 0 {GUTTER.x}px"
 						style:cursor={cursorFor(pen)}
+						style:--cell="{cell}px"
+						style:--label-size="{labelSize}px"
 						onmousedown={keepFocus}
+						onpointerleave={() => (hoverKey = null)}
 					>
+						<div class="ruler cols" aria-hidden="true">
+							{#each colLabels as c (c)}
+								<span class:on={hoverPos?.col === c}>{c + 1}</span>
+							{/each}
+						</div>
+						<div class="ruler rows" aria-hidden="true">
+							{#each rowLabels as r (r)}
+								<span class:on={hoverPos?.row === r}>{r + 1}</span>
+							{/each}
+						</div>
+
 						<svg
 							width={size.cols * cell}
 							height={size.rows * cell}
@@ -586,6 +611,7 @@
 							aria-label="Clues"
 							style:width="{panelW}px"
 							style:height="{panelH}px"
+							style:margin-top={narrow ? null : `${GUTTER.y}px`}
 						>
 							<div class="title-field">
 								<input
@@ -1071,6 +1097,43 @@
 		display: block;
 		overflow: visible;
 		filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.35));
+	}
+
+	.ruler {
+		position: absolute;
+		display: flex;
+		font-size: var(--label-size);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--on-mat-dim);
+		pointer-events: none;
+	}
+	.ruler span {
+		flex: 0 0 var(--cell);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.ruler.cols {
+		left: 0;
+		bottom: 100%;
+		padding-bottom: 6px;
+		align-items: flex-end;
+	}
+	.ruler.rows {
+		top: 0;
+		right: 100%;
+		padding-right: 7px;
+		flex-direction: column;
+	}
+	.ruler.rows span {
+		justify-content: flex-end;
+	}
+	.ruler span.on {
+		font-size: calc(var(--label-size) * 1.25);
+		font-weight: 800;
+		color: var(--rule);
 	}
 
 	.sq {
