@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import Halftone from '$lib/Halftone.svelte';
 	import {
 		MAX_SIZE,
 		MIN_SIZE,
@@ -404,6 +405,7 @@
 />
 
 <main class="mat">
+	<Halftone />
 	{#if size === null}
 		<section class="setup">
 			<h1>Grids</h1>
@@ -683,7 +685,6 @@
 
 	.mat {
 		--mat: #2f5b4c;
-		--dot-pitch: 9px;
 		--halftone-strength: 0.1;
 		--rule: #e6cf5c;
 		--paper: #ffffff;
@@ -702,26 +703,6 @@
 		background-color: var(--mat);
 		position: relative;
 		isolation: isolate;
-	}
-
-	.mat::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		pointer-events: none;
-		background-image:
-			radial-gradient(circle closest-side, #fff, #000),
-			radial-gradient(ellipse 85% 85% at 0% 0%, #fff, #6e6e6e 100%),
-			radial-gradient(ellipse 85% 85% at 100% 100%, #fff, #6e6e6e 100%);
-		background-size:
-			var(--dot-pitch) var(--dot-pitch),
-			100% 100%,
-			100% 100%;
-		background-blend-mode: multiply, lighten, normal;
-		filter: contrast(24);
-		mix-blend-mode: screen;
-		opacity: var(--halftone-strength);
 	}
 
 	@media (prefers-color-scheme: dark) {
@@ -1094,9 +1075,10 @@
 		-webkit-user-select: none;
 	}
 	.sheet svg {
+		position: relative;
 		display: block;
 		overflow: visible;
-		filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.35));
+		box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
 	}
 
 	.ruler {
