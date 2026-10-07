@@ -14,6 +14,14 @@
 		type Grid
 	} from '$lib/crossword';
 	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
+	import {
+		counterparts,
+		describeSymmetry,
+		fitsGrid,
+		symmetryOptions,
+		type SymmetryKey,
+		type SymmetryOption
+	} from '$lib/symmetry';
 
 	type Pen = 'white' | 'black';
 
@@ -94,6 +102,28 @@
 	let editing = $state<{ keys: string[]; idx: number } | null>(null);
 	let painting = false;
 	let lastPaint = { key: '', time: 0 };
+
+	let chosenSymmetry = $state<SymmetryKey[]>([]);
+	let symmetryOpen = $state(false);
+	let symmetryEl = $state<HTMLDivElement>();
+
+	const symmetry = $derived(size ? symmetryOptions(chosenSymmetry, size.rows, size.cols) : []);
+	const activeSymmetry = $derived(symmetry.filter((s) => s.checked).map((s) => s.key));
+	const symmetryName = $derived(describeSymmetry(activeSymmetry));
+
+	function toggleSymmetry(option: SymmetryOption) {
+		if (!option.available || option.impliedBy) return;
+		chosenSymmetry = chosenSymmetry.includes(option.key)
+			? chosenSymmetry.filter((k) => k !== option.key)
+			: [...chosenSymmetry, option.key];
+	}
+
+	function symmetryHint(option: SymmetryOption) {
+		if (!option.available) return 'Square grids only';
+		if (!option.impliedBy) return '';
+		const names = option.impliedBy.map((k) => symmetry.find((s) => s.key === k)?.short ?? k);
+		return `Implied by ${names.join(' + ')}`;
+	}
 
 	let winW = $state(1200);
 	const narrow = $derived(winW <= 640);
@@ -215,6 +245,8 @@
 		axis = 'across';
 		editing = null;
 		hoverKey = null;
+		symmetryOpen = false;
+		chosenSymmetry = chosenSymmetry.filter((k) => fitsGrid(k, p.rows, p.cols));
 		sizeInput = { rows: p.rows, cols: p.cols };
 		size = { rows: p.rows, cols: p.cols };
 	}
@@ -263,13 +295,14 @@
 	}
 
 	function paint(key: string) {
-		const sq = grid[key];
-		if (pen === 'black' && !sq.black) {
-			sq.black = true;
-			sq.letter = '';
-		} else if (pen === 'white' && sq.black) {
-			sq.black = false;
-		} else return;
+		if (!size) return;
+		const black = pen === 'black';
+		if (grid[key].black === black) return;
+		const { row, col } = parseKey(key);
+		for (const k of [key, ...counterparts(row, col, size.rows, size.cols, activeSymmetry)]) {
+			grid[k].black = black;
+			if (black) grid[k].letter = '';
+		}
 		lastPaint = { key, time: performance.now() };
 		editing = null;
 	}
@@ -366,7 +399,15 @@
 		el.value = '';
 	}
 
+	function onWindowPointerDown(e: PointerEvent) {
+		if (symmetryOpen && !symmetryEl?.contains(e.target as Node)) symmetryOpen = false;
+	}
+
 	function onWindowKey(e: KeyboardEvent) {
+		if (e.key === 'Escape' && symmetryOpen) {
+			symmetryOpen = false;
+			return;
+		}
 		if (size === null || e.code !== 'Space') return;
 		const t = e.target as HTMLElement | null;
 		if ((t instanceof HTMLInputElement && t !== input) || t instanceof HTMLTextAreaElement) return;
@@ -401,6 +442,7 @@
 <svelte:window
 	bind:innerWidth={winW}
 	onkeydown={onWindowKey}
+	onpointerdown={onWindowPointerDown}
 	onpointerup={() => (painting = false)}
 />
 
@@ -501,6 +543,86 @@
 							{axis === 'across' ? 'Across' : 'Down'}
 							<kbd>⏎</kbd>
 						</button>
+
+						<div class="symmetry" bind:this={symmetryEl}>
+							<button
+								class="chip"
+								class:on={activeSymmetry.length > 0}
+								aria-haspopup="true"
+								aria-expanded={symmetryOpen}
+								onmousedown={keepFocus}
+								onclick={() => (symmetryOpen = !symmetryOpen)}
+								title="Mirror black squares as you place them"
+							>
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<path d="M8 1.5v13" stroke-dasharray="2 2.2" />
+									<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3" />
+								</svg>
+								Symmetry
+								<span class="symmetry-name">{symmetryName}</span>
+							</button>
+
+							{#if symmetryOpen}
+								<div class="symmetry-menu" role="group" aria-label="Symmetry">
+									<p>
+										Squares you blacken or clear are mirrored as you go. Nothing already in the grid
+										changes when you switch this on or off.
+									</p>
+									{#each symmetry as s (s.key)}
+										{@const hint = symmetryHint(s)}
+										<label
+											class="option"
+											class:locked={s.impliedBy !== null}
+											class:unavailable={!s.available}
+										>
+											<input
+												type="checkbox"
+												checked={s.checked}
+												disabled={!s.available || s.impliedBy !== null}
+												onchange={() => toggleSymmetry(s)}
+											/>
+											<svg
+												class="glyph"
+												viewBox="0 0 16 16"
+												width="16"
+												height="16"
+												aria-hidden="true"
+											>
+												{#if s.key === 'rot180'}
+													<path d="M8 3a5 5 0 0 1 0 10M10.2 10.8 8 13l2.2 2.2" />
+													<circle cx="8" cy="8" r="1" />
+												{:else if s.key === 'rot90'}
+													<path d="M8 3a5 5 0 0 1 5 5M10.8 5.8 13 8l2.2-2.2" />
+													<circle cx="8" cy="8" r="1" />
+												{:else}
+													<rect x="3" y="3" width="10" height="10" />
+													<path
+														class="axis"
+														d={{
+															vertical: 'M8 1v14',
+															horizontal: 'M1 8h14',
+															diagonal: 'M1.5 1.5l13 13',
+															antidiagonal: 'M14.5 1.5l-13 13'
+														}[s.key]}
+													/>
+												{/if}
+											</svg>
+											<span class="option-text">
+												<span class="option-label">{s.label}</span>
+												{#if hint}<span class="option-hint">{hint}</span>{/if}
+											</span>
+										</label>
+									{/each}
+									<button
+										class="symmetry-off"
+										disabled={activeSymmetry.length === 0}
+										onclick={() => (chosenSymmetry = [])}
+									>
+										Turn symmetry off
+									</button>
+								</div>
+							{/if}
+						</div>
 
 						{#if numbering}
 							<button
@@ -892,6 +1014,138 @@
 		background: transparent;
 	}
 
+	.symmetry {
+		position: relative;
+		display: inline-flex;
+	}
+	.symmetry-name {
+		color: var(--on-mat-dim);
+	}
+	.chip.on .symmetry-name {
+		color: var(--rule);
+		font-weight: 600;
+	}
+	.symmetry-menu {
+		position: absolute;
+		z-index: 10;
+		top: calc(100% + 6px);
+		right: 0;
+		width: 18rem;
+		box-sizing: border-box;
+		padding: 0.75rem;
+		background: color-mix(in srgb, var(--mat) 55%, #000);
+		border: 1px solid rgb(255 255 255 / 0.28);
+		border-radius: 4px;
+		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+	}
+	.symmetry-menu p {
+		margin: 0 0.4rem 0.5rem;
+		font-size: 0.78rem;
+		line-height: 1.4;
+		color: var(--on-mat-dim);
+	}
+	.option {
+		display: grid;
+		grid-template-columns: 1rem 1rem 1fr;
+		align-items: center;
+		column-gap: 0.6rem;
+		min-height: 2.4rem;
+		padding: 0 0.4rem;
+		border-radius: 4px;
+		font-size: 0.875rem;
+		cursor: pointer;
+	}
+	.option:hover {
+		background: rgb(255 255 255 / 0.08);
+	}
+	.option.locked,
+	.option.unavailable {
+		cursor: not-allowed;
+		background: none;
+	}
+	.option input {
+		appearance: none;
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+		box-sizing: border-box;
+		display: grid;
+		place-content: center;
+		border: 1.5px solid var(--on-mat);
+		border-radius: 2px;
+		background: transparent;
+		cursor: inherit;
+	}
+	.option input::before {
+		content: '';
+		width: 0.6rem;
+		height: 0.6rem;
+		background: var(--ink);
+		clip-path: polygon(13% 52%, 0 66%, 38% 100%, 100% 22%, 86% 9%, 37% 70%);
+		scale: 0;
+	}
+	.option input:checked {
+		background: var(--rule);
+		border-color: var(--rule);
+	}
+	.option input:checked::before {
+		scale: 1;
+	}
+	.option.locked input {
+		opacity: 0.5;
+	}
+	.option.unavailable input,
+	.option.unavailable .glyph,
+	.option.unavailable .option-label {
+		opacity: 0.4;
+	}
+	.glyph {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.glyph rect {
+		opacity: 0.5;
+	}
+	.glyph circle {
+		fill: currentColor;
+		stroke: none;
+	}
+	.glyph .axis {
+		stroke: var(--rule);
+	}
+	.option-text {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		line-height: 1.2;
+	}
+	.option-hint {
+		font-size: 0.72rem;
+		color: var(--on-mat-dim);
+	}
+	.symmetry-off {
+		width: 100%;
+		height: 2rem;
+		margin-top: 0.5rem;
+		border: 1px solid rgb(255 255 255 / 0.28);
+		border-radius: 4px;
+		background: transparent;
+		font-size: 0.8rem;
+		font-weight: 500;
+	}
+	.symmetry-off:hover {
+		background: rgb(255 255 255 / 0.08);
+	}
+	.symmetry-off:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+		background: transparent;
+	}
+
 	.swatch {
 		width: 14px;
 		height: 14px;
@@ -1171,7 +1425,17 @@
 
 	@media (max-width: 640px) {
 		.bar {
+			position: relative;
 			padding: 0.75rem 0.75rem 0.25rem;
+		}
+		.symmetry {
+			position: static;
+		}
+		.symmetry-menu {
+			top: 100%;
+			left: 0.75rem;
+			right: 0.75rem;
+			width: auto;
 		}
 		.pen-label,
 		kbd {
