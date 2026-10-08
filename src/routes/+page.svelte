@@ -39,12 +39,11 @@
 		size ? allKeys(size.rows, size.cols).map((key) => ({ key, ...parseKey(key) })) : []
 	);
 
-	const complete = $derived(
-		size !== null && Object.values(grid).every((sq) => sq.black || sq.letter !== '')
-	);
 	const numbering = $derived(
-		complete && size ? numberEntries(size.rows, size.cols, (k) => grid[k].black) : null
+		size ? numberEntries(size.rows, size.cols, (k) => grid[k].black) : null
 	);
+
+	const BLANK = '·';
 
 	type ClueRow = { id: string; number: number; word: string; keys: string[] };
 
@@ -59,7 +58,7 @@
 			lists[e.axis].push({
 				id: entryId(e),
 				number: e.number,
-				word: e.keys.map((k) => grid[k].letter).join(''),
+				word: e.keys.map((k) => grid[k].letter || BLANK).join(''),
 				keys: e.keys
 			});
 		}
@@ -82,7 +81,7 @@
 	}
 
 	function download() {
-		if (!numbering || !size) return;
+		if (!size) return;
 		const puzzle = toIpuz({ ...size, grid, clues, title, extra });
 		const blob = new Blob([JSON.stringify(puzzle, null, 2) + '\n'], {
 			type: 'application/json'
@@ -148,8 +147,8 @@
 	});
 
 	const room: { w: number; h: number } = $derived.by(() => {
-		const side = numbering && !narrow ? panelW + PANEL_GAP : 0;
-		const below = numbering && narrow ? panelH + PANEL_GAP : 0;
+		const side = narrow ? 0 : panelW + PANEL_GAP;
+		const below = narrow ? panelH + PANEL_GAP : 0;
 		return { w: stageW - 48 - side - GUTTER.x, h: stageH - 48 - below - GUTTER.y };
 	});
 
@@ -198,7 +197,7 @@
 	}
 	let layoutEl = $state<HTMLDivElement>();
 	$effect(() => {
-		void [cellDev, dpr, size, numbering, winW];
+		void [cellDev, dpr, size, winW];
 		const els = [layoutEl, sheet].filter((e): e is HTMLDivElement => !!e);
 		if (!els.length) return;
 		let frame = 0;
@@ -624,19 +623,17 @@
 							{/if}
 						</div>
 
-						{#if numbering}
-							<button
-								class="chip"
-								onmousedown={keepFocus}
-								onclick={download}
-								title="Download the puzzle as IPUZ"
-							>
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-									<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
-								</svg>
-								Download
-							</button>
-						{/if}
+						<button
+							class="chip"
+							onmousedown={keepFocus}
+							onclick={download}
+							title="Download the puzzle as IPUZ"
+						>
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+								<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
+							</svg>
+							Download
+						</button>
 					</div>
 				</div>
 			</header>
@@ -729,66 +726,64 @@
 						/>
 					</div>
 
-					{#if numbering}
-						<aside
-							class="clues"
-							aria-label="Clues"
-							style:width="{panelW}px"
-							style:height="{panelH}px"
-							style:margin-top={narrow ? null : `${GUTTER.y}px`}
-						>
-							<div class="title-field">
-								<input
-									id="puzzle-title"
-									type="text"
-									placeholder="Untitled puzzle"
-									autocomplete="off"
-									spellcheck="true"
-									bind:value={title}
-									onkeydown={(e) => {
-										if (e.key === 'Enter' || e.key === 'Escape') {
-											e.preventDefault();
-											e.currentTarget.blur();
-										}
-									}}
-								/>
-							</div>
-							{#each [['across', 'Across'], ['down', 'Down']] as const as [ax, title] (ax)}
-								<section class="clue-col">
-									<h2>{title}</h2>
-									{#if clueLists[ax].length === 0}
-										<p class="empty">No {ax} entries.</p>
-									{:else}
-										<ol>
-											{#each clueLists[ax] as c (c.id)}
-												<li class:active={activeClue === c.id}>
-													<label for="clue-{c.id}" class="clue-num">{c.number}</label>
-													<textarea
-														id="clue-{c.id}"
-														rows="1"
-														value={clueText(c)}
-														aria-label="{c.number} {title}, {c.word}"
-														spellcheck="true"
-														oninput={(e) => (clues[c.id] = e.currentTarget.value)}
-														onfocus={() => (activeClue = c.id)}
-														onblur={() => {
-															if (activeClue === c.id) activeClue = null;
-														}}
-														onkeydown={(e) => {
-															if (e.key === 'Enter' || e.key === 'Escape') {
-																e.preventDefault();
-																e.currentTarget.blur();
-															}
-														}}></textarea>
-													<span class="answer">{c.word} ({c.word.length})</span>
-												</li>
-											{/each}
-										</ol>
-									{/if}
-								</section>
-							{/each}
-						</aside>
-					{/if}
+					<aside
+						class="clues"
+						aria-label="Clues"
+						style:width="{panelW}px"
+						style:height="{panelH}px"
+						style:margin-top={narrow ? null : `${GUTTER.y}px`}
+					>
+						<div class="title-field">
+							<input
+								id="puzzle-title"
+								type="text"
+								placeholder="Untitled puzzle"
+								autocomplete="off"
+								spellcheck="true"
+								bind:value={title}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === 'Escape') {
+										e.preventDefault();
+										e.currentTarget.blur();
+									}
+								}}
+							/>
+						</div>
+						{#each [['across', 'Across'], ['down', 'Down']] as const as [ax, title] (ax)}
+							<section class="clue-col">
+								<h2>{title}</h2>
+								{#if clueLists[ax].length === 0}
+									<p class="empty">No {ax} entries.</p>
+								{:else}
+									<ol>
+										{#each clueLists[ax] as c (c.id)}
+											<li class:active={activeClue === c.id}>
+												<label for="clue-{c.id}" class="clue-num">{c.number}</label>
+												<textarea
+													id="clue-{c.id}"
+													rows="1"
+													value={clueText(c)}
+													aria-label="{c.number} {title}, {c.word}"
+													spellcheck="true"
+													oninput={(e) => (clues[c.id] = e.currentTarget.value)}
+													onfocus={() => (activeClue = c.id)}
+													onblur={() => {
+														if (activeClue === c.id) activeClue = null;
+													}}
+													onkeydown={(e) => {
+														if (e.key === 'Enter' || e.key === 'Escape') {
+															e.preventDefault();
+															e.currentTarget.blur();
+														}
+													}}></textarea>
+												<span class="answer">{c.word} ({c.word.length})</span>
+											</li>
+										{/each}
+									</ol>
+								{/if}
+							</section>
+						{/each}
+					</aside>
 				</div>
 			</div>
 		</div>
