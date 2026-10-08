@@ -795,6 +795,12 @@
 		margin: 0;
 		height: 100%;
 	}
+	:global(*) {
+		scrollbar-width: none;
+	}
+	:global(*::-webkit-scrollbar) {
+		display: none;
+	}
 	:global(body) {
 		font-family: 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif;
 		-webkit-font-smoothing: antialiased;
