@@ -26,6 +26,7 @@
 		CONSTRAINTS,
 		describeConstraints,
 		regionColours,
+		unchedSquares,
 		whiteRegions,
 		type ConstraintKey
 	} from '$lib/constraints';
@@ -183,7 +184,9 @@
 	const shades = $derived(
 		size && regions ? regionColours(regions, size.rows, size.cols) : new Map<string, number>()
 	);
-	const constraintsName = $derived(describeConstraints(chosenConstraints, regions));
+	const noUnches = $derived(chosenConstraints.includes('unches'));
+	const unched = $derived(size && noUnches ? unchedSquares(size.rows, size.cols, walls) : null);
+	const constraintsName = $derived(describeConstraints(chosenConstraints, regions, unched));
 
 	function toggleConstraint(key: ConstraintKey) {
 		chosenConstraints = chosenConstraints.includes(key)
@@ -822,14 +825,13 @@
 							{#if constraintsOpen}
 								<div class="menu-panel" role="group" aria-label="Constraints">
 									<p>
-										Constraints only flag what they find — nothing in the grid is changed for you.
+										Constraints only flag what they find. Nothing in the grid is changed for you.
 									</p>
 									{#each CONSTRAINTS as c (c.key)}
-										<label class="option" class:unavailable={!c.ready}>
+										<label class="option">
 											<input
 												type="checkbox"
-												checked={c.ready && chosenConstraints.includes(c.key)}
-												disabled={!c.ready}
+												checked={chosenConstraints.includes(c.key)}
 												onchange={() => toggleConstraint(c.key)}
 											/>
 											<svg
@@ -849,15 +851,19 @@
 											</svg>
 											<span class="option-text">
 												<span class="option-label">{c.label}</span>
-												<span class="option-hint"
-													>{c.ready ? c.hint : `${c.hint} Coming soon.`}</span
-												>
 											</span>
 										</label>
 									{/each}
-									{#if interlock && regions && regions.count > 1}
+									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0)}
 										<p class="menu-note" role="status">
-											The white squares fall into {regions.count} separate regions, shaded below.
+											{#if interlock && regions && regions.count > 1}
+												The white squares fall into {regions.count} separate regions, shaded below.
+											{/if}
+											{#if unched && unched.size > 0}
+												{unched.size === 1
+													? 'One white square is unchecked'
+													: `${unched.size} white squares are unchecked`}, flashing below.
+											{/if}
 										</p>
 									{/if}
 									<button
@@ -954,6 +960,9 @@
 									onpointerenter={(e) => onCellEnter(e, key)}
 									ondblclick={() => onCellDouble(key)}
 								/>
+								{#if unched?.has(key)}
+									<rect class="unched" x={col} y={row} width="1" height="1" />
+								{/if}
 								{#if sq.letter && !sq.black}
 									<text
 										x={col + 0.5}
@@ -1136,9 +1145,10 @@
 		--rule: #e6cf5c;
 		--paper: #ffffff;
 		--ink: #161616;
-		--shade-1: #ffdfe4;
-		--shade-2: #d8e8fb;
-		--shade-3: #dcf0da;
+		--shade-1: #ff8fa3;
+		--shade-2: #74c0f0;
+		--shade-3: #8fdc9b;
+		--unched: #d7263d;
 		--run: #fff1a1;
 		--caret: #f4c430;
 		--on-mat: #eef3ef;
@@ -1847,6 +1857,27 @@
 	}
 	.sq.caret {
 		fill: var(--caret);
+	}
+
+	rect.unched {
+		fill: var(--unched);
+		pointer-events: none;
+		animation: unched-flash 1s ease-in-out infinite;
+	}
+	@keyframes unched-flash {
+		0%,
+		100% {
+			opacity: 0.12;
+		}
+		50% {
+			opacity: 0.85;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		rect.unched {
+			animation: none;
+			opacity: 0.6;
+		}
 	}
 
 	text {

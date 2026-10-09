@@ -1,4 +1,4 @@
-import { keyOf, type Walls } from './crossword';
+import { keyOf, step, type Axis, type Walls } from './crossword';
 
 export type ConstraintKey = 'interlock' | 'unches';
 
@@ -6,24 +6,18 @@ export interface Constraint {
 	key: ConstraintKey;
 	label: string;
 	short: string;
-	hint: string;
-	ready: boolean;
 }
 
 export const CONSTRAINTS: readonly Constraint[] = [
 	{
 		key: 'interlock',
 		label: 'All-over interlock',
-		short: 'interlock',
-		hint: 'Every white square should sit in one connected region.',
-		ready: true
+		short: 'interlock'
 	},
 	{
 		key: 'unches',
 		label: 'No unches',
-		short: 'no unches',
-		hint: 'Every white square should be both across and down.',
-		ready: false
+		short: 'no unches'
 	}
 ];
 
@@ -185,15 +179,51 @@ export function regionColours(regions: Regions, rows: number, cols: number): Map
 	return painted;
 }
 
+export function unchedSquares(rows: number, cols: number, walls: Walls): Set<string> {
+	const white = (r: number, c: number) =>
+		r >= 0 && c >= 0 && r < rows && c < cols && !walls.black(keyOf(r, c));
+
+	const joined = (r: number, c: number, axis: Axis) => {
+		const [nr, nc] = step(r, c, axis);
+		return white(r, c) && white(nr, nc) && !walls.bar(r, c, axis);
+	};
+	const checked = (r: number, c: number, axis: Axis) =>
+		joined(r, c, axis) || (axis === 'across' ? joined(r, c - 1, axis) : joined(r - 1, c, axis));
+
+	const unched = new Set<string>();
+	for (let r = 0; r < rows; r++)
+		for (let c = 0; c < cols; c++) {
+			if (!white(r, c)) continue;
+			if (checked(r, c, 'across') && checked(r, c, 'down')) continue;
+			unched.add(keyOf(r, c));
+		}
+	return unched;
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+function describeInterlock(regions: Regions | null): string {
+	if (regions === null) return 'interlock';
+	if (regions.count <= 1) return 'Connected';
+	return count(regions.count, 'region', 'regions');
+}
+
+function describeUnches(unched: Set<string> | null): string {
+	if (unched === null) return 'no unches';
+	if (unched.size === 0) return 'No unches';
+	return count(unched.size, 'unch', 'unches');
+}
+
 export function describeConstraints(
 	chosen: Iterable<ConstraintKey>,
-	regions: Regions | null
+	regions: Regions | null,
+	unched: Set<string> | null
 ): string {
 	const held = new Set(chosen);
 	if (held.size === 0) return 'Off';
-	if (held.has('interlock') && regions)
-		return regions.count <= 1 ? 'Connected' : `${regions.count} regions`;
-	return CONSTRAINTS.filter((c) => held.has(c.key))
-		.map((c) => c.short)
-		.join(' + ');
+
+	const parts: string[] = [];
+	if (held.has('interlock')) parts.push(describeInterlock(regions));
+	if (held.has('unches')) parts.push(describeUnches(unched));
+	return parts.join(' + ');
 }
