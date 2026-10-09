@@ -22,6 +22,13 @@
 		type Grid,
 		type GridMode
 	} from '$lib/crossword';
+	import {
+		CONSTRAINTS,
+		describeConstraints,
+		regionColours,
+		whiteRegions,
+		type ConstraintKey
+	} from '$lib/constraints';
 	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
 	import { rewriteReferences, transposeReferences } from '$lib/references';
 	import {
@@ -165,6 +172,23 @@
 		if (!option.impliedBy) return '';
 		const names = option.impliedBy.map((k) => symmetry.find((s) => s.key === k)?.short ?? k);
 		return `Implied by ${names.join(' + ')}`;
+	}
+
+	let chosenConstraints = $state<ConstraintKey[]>([]);
+	let constraintsOpen = $state(false);
+	let constraintsEl = $state<HTMLDivElement>();
+
+	const interlock = $derived(chosenConstraints.includes('interlock'));
+	const regions = $derived(size && interlock ? whiteRegions(size.rows, size.cols, walls) : null);
+	const shades = $derived(
+		size && regions ? regionColours(regions, size.rows, size.cols) : new Map<string, number>()
+	);
+	const constraintsName = $derived(describeConstraints(chosenConstraints, regions));
+
+	function toggleConstraint(key: ConstraintKey) {
+		chosenConstraints = chosenConstraints.includes(key)
+			? chosenConstraints.filter((k) => k !== key)
+			: [...chosenConstraints, key];
 	}
 
 	let winW = $state(1200);
@@ -317,6 +341,7 @@
 		editing = null;
 		hoverKey = null;
 		symmetryOpen = false;
+		constraintsOpen = false;
 		chosenSymmetry = chosenSymmetry.filter((k) => fitsGrid(k, p.rows, p.cols));
 		sizeInput = { rows: p.rows, cols: p.cols };
 		modeInput = p.mode;
@@ -388,6 +413,7 @@
 		chosenSymmetry = transposeSymmetry(chosenSymmetry);
 		hoverKey = null;
 		symmetryOpen = false;
+		constraintsOpen = false;
 		sizeInput = { rows: cols, cols: rows };
 		size = { rows: cols, cols: rows };
 	}
@@ -525,11 +551,13 @@
 
 	function onWindowPointerDown(e: PointerEvent) {
 		if (symmetryOpen && !symmetryEl?.contains(e.target as Node)) symmetryOpen = false;
+		if (constraintsOpen && !constraintsEl?.contains(e.target as Node)) constraintsOpen = false;
 	}
 
 	function onWindowKey(e: KeyboardEvent) {
-		if (e.key === 'Escape' && symmetryOpen) {
+		if (e.key === 'Escape' && (symmetryOpen || constraintsOpen)) {
 			symmetryOpen = false;
+			constraintsOpen = false;
 			return;
 		}
 		if (size === null || bars || e.code !== 'Space') return;
@@ -690,7 +718,10 @@
 								aria-haspopup="true"
 								aria-expanded={symmetryOpen}
 								onmousedown={keepFocus}
-								onclick={() => (symmetryOpen = !symmetryOpen)}
+								onclick={() => {
+									symmetryOpen = !symmetryOpen;
+									constraintsOpen = false;
+								}}
 								title={bars
 									? 'Mirror bars as you place them'
 									: 'Mirror black squares as you place them'}
@@ -767,6 +798,79 @@
 							{/if}
 						</div>
 
+						<div class="menu constraints" bind:this={constraintsEl}>
+							<button
+								class="chip"
+								class:on={chosenConstraints.length > 0}
+								aria-haspopup="true"
+								aria-expanded={constraintsOpen}
+								onmousedown={keepFocus}
+								onclick={() => {
+									constraintsOpen = !constraintsOpen;
+									symmetryOpen = false;
+								}}
+								title="Check the grid against construction rules"
+							>
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<rect x="2.5" y="2.5" width="11" height="11" />
+									<path d="M2.5 8h11M8 2.5v11" />
+								</svg>
+								Constraints
+								<span class="menu-name">{constraintsName}</span>
+							</button>
+
+							{#if constraintsOpen}
+								<div class="menu-panel" role="group" aria-label="Constraints">
+									<p>
+										Constraints only flag what they find — nothing in the grid is changed for you.
+									</p>
+									{#each CONSTRAINTS as c (c.key)}
+										<label class="option" class:unavailable={!c.ready}>
+											<input
+												type="checkbox"
+												checked={c.ready && chosenConstraints.includes(c.key)}
+												disabled={!c.ready}
+												onchange={() => toggleConstraint(c.key)}
+											/>
+											<svg
+												class="glyph"
+												viewBox="0 0 16 16"
+												width="16"
+												height="16"
+												aria-hidden="true"
+											>
+												{#if c.key === 'interlock'}
+													<path d="M3 6.5h6.5V13" />
+													<path class="axis" d="M6.5 3v6.5H13" />
+												{:else}
+													<rect x="3" y="3" width="10" height="10" />
+													<path class="axis" d="M3 8h10" />
+												{/if}
+											</svg>
+											<span class="option-text">
+												<span class="option-label">{c.label}</span>
+												<span class="option-hint"
+													>{c.ready ? c.hint : `${c.hint} Coming soon.`}</span
+												>
+											</span>
+										</label>
+									{/each}
+									{#if interlock && regions && regions.count > 1}
+										<p class="menu-note" role="status">
+											The white squares fall into {regions.count} separate regions, shaded below.
+										</p>
+									{/if}
+									<button
+										class="menu-off"
+										disabled={chosenConstraints.length === 0}
+										onclick={() => (chosenConstraints = [])}
+									>
+										Turn constraints off
+									</button>
+								</div>
+							{/if}
+						</div>
+
 						<button
 							class="chip"
 							onmousedown={keepFocus}
@@ -832,6 +936,7 @@
 							{#each cells as { key, row, col } (key)}
 								{@const sq = grid[key]}
 								{@const num = numbering?.numbers.get(key)}
+								{@const shade = shades.get(key) ?? 0}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<rect
 									x={col}
@@ -840,6 +945,9 @@
 									height="1"
 									class="sq"
 									class:black={sq.black}
+									class:shade1={shade === 1}
+									class:shade2={shade === 2}
+									class:shade3={shade === 3}
 									class:run={runSet.has(key) || clueSet.has(key)}
 									class:caret={key === caretKey}
 									onpointerdown={(e) => onCellDown(e, key)}
@@ -1028,6 +1136,9 @@
 		--rule: #e6cf5c;
 		--paper: #ffffff;
 		--ink: #161616;
+		--shade-1: #ffdfe4;
+		--shade-2: #d8e8fb;
+		--shade-3: #dcf0da;
 		--run: #fff1a1;
 		--caret: #f4c430;
 		--on-mat: #eef3ef;
@@ -1293,18 +1404,22 @@
 		background: transparent;
 	}
 
-	.symmetry {
+	.symmetry,
+	.menu {
 		position: relative;
 		display: inline-flex;
 	}
-	.symmetry-name {
+	.symmetry-name,
+	.menu-name {
 		color: var(--on-mat-dim);
 	}
-	.chip.on .symmetry-name {
+	.chip.on .symmetry-name,
+	.chip.on .menu-name {
 		color: var(--rule);
 		font-weight: 600;
 	}
-	.symmetry-menu {
+	.symmetry-menu,
+	.menu-panel {
 		position: absolute;
 		z-index: 10;
 		top: calc(100% + 6px);
@@ -1317,7 +1432,8 @@
 		border-radius: 4px;
 		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
 	}
-	.symmetry-menu p {
+	.symmetry-menu p,
+	.menu-panel p {
 		margin: 0 0.4rem 0.5rem;
 		font-size: 0.78rem;
 		line-height: 1.4;
@@ -1406,7 +1522,8 @@
 		font-size: 0.72rem;
 		color: var(--on-mat-dim);
 	}
-	.symmetry-off {
+	.symmetry-off,
+	.menu-off {
 		width: 100%;
 		height: 2rem;
 		margin-top: 0.5rem;
@@ -1416,13 +1533,21 @@
 		font-size: 0.8rem;
 		font-weight: 500;
 	}
-	.symmetry-off:hover {
+	.symmetry-off:hover,
+	.menu-off:hover {
 		background: rgb(255 255 255 / 0.08);
 	}
-	.symmetry-off:disabled {
+	.symmetry-off:disabled,
+	.menu-off:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 		background: transparent;
+	}
+
+	.menu-panel p.menu-note {
+		margin: 0.5rem 0.4rem 0;
+		padding-top: 0.5rem;
+		border-top: 1px solid rgb(255 255 255 / 0.18);
 	}
 
 	.swatch {
@@ -1708,6 +1833,15 @@
 	.sq.black {
 		fill: #000;
 	}
+	.sq.shade1 {
+		fill: var(--shade-1);
+	}
+	.sq.shade2 {
+		fill: var(--shade-2);
+	}
+	.sq.shade3 {
+		fill: var(--shade-3);
+	}
 	.sq.run {
 		fill: var(--run);
 	}
@@ -1772,10 +1906,12 @@
 			position: relative;
 			padding: 0.75rem 0.75rem 0.25rem;
 		}
-		.symmetry {
+		.symmetry,
+		.menu {
 			position: static;
 		}
-		.symmetry-menu {
+		.symmetry-menu,
+		.menu-panel {
 			top: 100%;
 			left: 0.75rem;
 			right: 0.75rem;
