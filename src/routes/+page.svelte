@@ -5,20 +5,27 @@
 		MAX_SIZE,
 		MIN_SIZE,
 		allKeys,
+		barField,
+		emptySquare,
 		entryId,
+		keyOf,
 		numberEntries,
 		parseKey,
 		runFrom,
 		validSize,
+		wallsOf,
 		type Axis,
-		type Grid
+		type Grid,
+		type GridMode
 	} from '$lib/crossword';
 	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
 	import {
+		barCounterparts,
 		counterparts,
 		describeSymmetry,
 		fitsGrid,
 		symmetryOptions,
+		type Bar,
 		type SymmetryKey,
 		type SymmetryOption
 	} from '$lib/symmetry';
@@ -30,8 +37,16 @@
 		['rows', 'Rows']
 	] as const;
 
+	const MODES = [
+		['squares', 'Squares'],
+		['bars', 'Bars']
+	] as const satisfies readonly (readonly [GridMode, string])[];
+
 	let sizeInput = $state({ rows: 15, cols: 15 });
+	let modeInput = $state<GridMode>('squares');
 	let size = $state.raw<{ rows: number; cols: number } | null>(null);
+	let mode = $state<GridMode>('squares');
+	const bars = $derived(mode === 'bars');
 
 	let grid = $state<Grid>({});
 
@@ -39,9 +54,9 @@
 		size ? allKeys(size.rows, size.cols).map((key) => ({ key, ...parseKey(key) })) : []
 	);
 
-	const numbering = $derived(
-		size ? numberEntries(size.rows, size.cols, (k) => grid[k].black) : null
-	);
+	const walls = $derived(wallsOf(grid));
+
+	const numbering = $derived(size ? numberEntries(size.rows, size.cols, walls) : null);
 
 	const BLANK = '·';
 
@@ -82,7 +97,7 @@
 
 	function download() {
 		if (!size) return;
-		const puzzle = toIpuz({ ...size, grid, clues, title, extra });
+		const puzzle = toIpuz({ ...size, mode, grid, clues, title, extra });
 		const blob = new Blob([JSON.stringify(puzzle, null, 2) + '\n'], {
 			type: 'application/json'
 		});
@@ -101,6 +116,7 @@
 	let editing = $state<{ keys: string[]; idx: number } | null>(null);
 	let painting = false;
 	let lastPaint = { key: '', time: 0 };
+	let barStroke: boolean | null = null;
 
 	let chosenSymmetry = $state<SymmetryKey[]>([]);
 	let symmetryOpen = $state(false);
@@ -166,20 +182,49 @@
 	let hoverKey = $state<string | null>(null);
 	const hoverPos = $derived(hoverKey ? parseKey(hoverKey) : null);
 
+	const rule = (x: number, y: number, w: number, h: number, k: number) =>
+		`M${x * k} ${y * k}h${w * k}v${h * k}h${-w * k}z`;
+
 	const linesPath = $derived.by(() => {
 		if (!size) return '';
 		const k = 1 / cellDev;
 		const lw = Math.max(1, Math.round(dpr));
 		const lead = Math.ceil(lw / 2);
-		const bar = (x: number, y: number, w: number, h: number) =>
-			`M${x * k} ${y * k}h${w * k}v${h * k}h${-w * k}z`;
 		let d = '';
 		for (let c = 0; c <= size.cols; c++)
-			d += bar(c * cellDev - lead, -lead, lw, size.rows * cellDev + lw);
+			d += rule(c * cellDev - lead, -lead, lw, size.rows * cellDev + lw, k);
 		for (let r = 0; r <= size.rows; r++)
-			d += bar(-lead, r * cellDev - lead, size.cols * cellDev + lw, lw);
+			d += rule(-lead, r * cellDev - lead, size.cols * cellDev + lw, lw, k);
 		return d;
 	});
+
+	const edges = $derived.by(() => {
+		if (!bars || !size) return [];
+		const list: Bar[] = [];
+		for (let r = 0; r < size.rows; r++)
+			for (let c = 0; c < size.cols; c++) {
+				if (c + 1 < size.cols) list.push({ row: r, col: c, axis: 'across' });
+				if (r + 1 < size.rows) list.push({ row: r, col: c, axis: 'down' });
+			}
+		return list;
+	});
+
+	const barsPath = $derived.by(() => {
+		if (!bars || !size) return '';
+		const k = 1 / cellDev;
+		const bw = Math.max(3, Math.round(dpr * 3));
+		const half = Math.round(bw / 2);
+		let d = '';
+		for (const e of edges) {
+			if (!grid[keyOf(e.row, e.col)][barField(e.axis)]) continue;
+			if (e.axis === 'across')
+				d += rule((e.col + 1) * cellDev - half, e.row * cellDev - half, bw, cellDev + bw, k);
+			else d += rule(e.col * cellDev - half, (e.row + 1) * cellDev - half, cellDev + bw, bw, k);
+		}
+		return d;
+	});
+
+	const GRAB = 0.17;
 
 	let sheet = $state<HTMLDivElement>();
 	let shift = $state({ x: 0, y: 0 });
@@ -247,6 +292,8 @@
 		symmetryOpen = false;
 		chosenSymmetry = chosenSymmetry.filter((k) => fitsGrid(k, p.rows, p.cols));
 		sizeInput = { rows: p.rows, cols: p.cols };
+		modeInput = p.mode;
+		mode = p.mode;
 		size = { rows: p.rows, cols: p.cols };
 	}
 
@@ -255,8 +302,8 @@
 		const cols = Math.round(Number(sizeInput.cols));
 		if (!validSize(rows) || !validSize(cols)) return;
 		const fresh: Grid = {};
-		for (const k of allKeys(rows, cols)) fresh[k] = { black: false, letter: '' };
-		load({ rows, cols, grid: fresh, clues: {}, title: '', extra: {} });
+		for (const k of allKeys(rows, cols)) fresh[k] = emptySquare();
+		load({ rows, cols, mode: modeInput, grid: fresh, clues: {}, title: '', extra: {} });
 	}
 
 	let importError = $state('');
@@ -285,7 +332,7 @@
 
 	function newGrid() {
 		const used =
-			Object.values(grid).some((s) => s.black || s.letter) ||
+			Object.values(grid).some((s) => s.black || s.letter || s.barRight || s.barBottom) ||
 			Object.keys(clues).length > 0 ||
 			title.trim() !== '';
 		if (used && !confirm('Start a new grid? This clears the current puzzle.')) return;
@@ -306,16 +353,42 @@
 		editing = null;
 	}
 
+	function setBar(bar: Bar, on: boolean) {
+		if (!size) return;
+		if (grid[keyOf(bar.row, bar.col)][barField(bar.axis)] === on) return;
+		for (const b of [bar, ...barCounterparts(bar, size.rows, size.cols, activeSymmetry)])
+			grid[keyOf(b.row, b.col)][barField(b.axis)] = on;
+		editing = null;
+	}
+
+	function onBarDown(e: PointerEvent, bar: Bar) {
+		e.preventDefault();
+		if (e.button !== 0) return;
+		editing = null;
+		painting = true;
+		barStroke = !grid[keyOf(bar.row, bar.col)][barField(bar.axis)];
+		setBar(bar, barStroke);
+	}
+
+	function onBarEnter(e: PointerEvent, bar: Bar) {
+		hoverKey = keyOf(bar.row, bar.col);
+		if (painting && barStroke !== null && e.buttons & 1) setBar(bar, barStroke);
+	}
+
 	function onCellDown(e: PointerEvent, key: string) {
 		e.preventDefault();
 		if (e.button !== 0) return;
 		if (editing) {
 			const i = editing.keys.indexOf(key);
-			if (i >= 0 && pen === 'white') {
+			if (i >= 0 && (bars || pen === 'white')) {
 				editing.idx = i;
 				return;
 			}
 			editing = null;
+		}
+		if (bars) {
+			openEditor(key, axis);
+			return;
 		}
 		painting = true;
 		paint(key);
@@ -323,11 +396,11 @@
 
 	function onCellEnter(e: PointerEvent, key: string) {
 		hoverKey = key;
-		if (painting && e.buttons & 1) paint(key);
+		if (!bars && painting && e.buttons & 1) paint(key);
 	}
 
 	function onCellDouble(key: string) {
-		if (grid[key].black) return;
+		if (bars || grid[key].black) return;
 		if (lastPaint.key === key && performance.now() - lastPaint.time < 600) return;
 		openEditor(key, axis);
 	}
@@ -335,7 +408,7 @@
 	async function openEditor(key: string, a: Axis) {
 		if (!size) return;
 		axis = a;
-		editing = { keys: runFrom(key, a, (k) => grid[k].black, size.rows, size.cols), idx: 0 };
+		editing = { keys: runFrom(key, a, walls, size.rows, size.cols), idx: 0 };
 		await tick();
 		input?.focus({ preventScroll: true });
 	}
@@ -407,7 +480,7 @@
 			symmetryOpen = false;
 			return;
 		}
-		if (size === null || e.code !== 'Space') return;
+		if (size === null || bars || e.code !== 'Space') return;
 		const t = e.target as HTMLElement | null;
 		if ((t instanceof HTMLInputElement && t !== input) || t instanceof HTMLTextAreaElement) return;
 		e.preventDefault();
@@ -442,7 +515,10 @@
 	bind:innerWidth={winW}
 	onkeydown={onWindowKey}
 	onpointerdown={onWindowPointerDown}
-	onpointerup={() => (painting = false)}
+	onpointerup={() => {
+		painting = false;
+		barStroke = null;
+	}}
 />
 
 <main class="mat">
@@ -487,15 +563,25 @@
 						</div>
 					{/each}
 				</div>
-				<button
-					type="submit"
-					class="primary"
-					disabled={!DIMS.every(
-						([dim]) => sizeInput[dim] >= MIN_SIZE && sizeInput[dim] <= MAX_SIZE
-					)}
-				>
-					Create
-				</button>
+				<div class="create-row">
+					<div class="segmented" role="radiogroup" aria-label="Divided by">
+						{#each MODES as [value, label] (value)}
+							<label class="segment" class:on={modeInput === value}>
+								<input type="radio" name="mode" {value} bind:group={modeInput} />
+								{label}
+							</label>
+						{/each}
+					</div>
+					<button
+						type="submit"
+						class="primary"
+						disabled={!DIMS.every(
+							([dim]) => sizeInput[dim] >= MIN_SIZE && sizeInput[dim] <= MAX_SIZE
+						)}
+					>
+						Create
+					</button>
+				</div>
 				<div class="or" aria-hidden="true">or</div>
 				<button type="button" class="secondary" onclick={() => importInput?.click()}>
 					Import IPUZ
@@ -513,18 +599,20 @@
 					<div class="tools">
 						<button class="chip quiet" onclick={newGrid}>New grid</button>
 
-						<button
-							class="pen"
-							onmousedown={keepFocus}
-							onclick={() => (pen = pen === 'white' ? 'black' : 'white')}
-							aria-label="Pen: {pen}. Press space to switch."
-							title="Switch pen (Space)"
-						>
-							<span class="swatch white" class:on={pen === 'white'}></span>
-							<span class="swatch black" class:on={pen === 'black'}></span>
-							<span class="pen-label">{pen === 'white' ? 'White pen' : 'Black pen'}</span>
-							<kbd>Space</kbd>
-						</button>
+						{#if !bars}
+							<button
+								class="pen"
+								onmousedown={keepFocus}
+								onclick={() => (pen = pen === 'white' ? 'black' : 'white')}
+								aria-label="Pen: {pen}. Press space to switch."
+								title="Switch pen (Space)"
+							>
+								<span class="swatch white" class:on={pen === 'white'}></span>
+								<span class="swatch black" class:on={pen === 'black'}></span>
+								<span class="pen-label">{pen === 'white' ? 'White pen' : 'Black pen'}</span>
+								<kbd>Space</kbd>
+							</button>
+						{/if}
 
 						<button
 							class="chip"
@@ -551,7 +639,9 @@
 								aria-expanded={symmetryOpen}
 								onmousedown={keepFocus}
 								onclick={() => (symmetryOpen = !symmetryOpen)}
-								title="Mirror black squares as you place them"
+								title={bars
+									? 'Mirror bars as you place them'
+									: 'Mirror black squares as you place them'}
 							>
 								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 									<path d="M8 1.5v13" stroke-dasharray="2 2.2" />
@@ -564,8 +654,10 @@
 							{#if symmetryOpen}
 								<div class="symmetry-menu" role="group" aria-label="Symmetry">
 									<p>
-										Squares you blacken or clear are mirrored as you go. Nothing already in the grid
-										changes when you switch this on or off.
+										{bars
+											? 'Bars you add or remove are mirrored as you go.'
+											: 'Squares you blacken or clear are mirrored as you go.'} Nothing already in the
+										grid changes when you switch this on or off.
 									</p>
 									{#each symmetry as s (s.key)}
 										{@const hint = symmetryHint(s)}
@@ -647,7 +739,7 @@
 						style:width="{size.cols * cell}px"
 						style:height="{size.rows * cell}px"
 						style:margin="{GUTTER.y}px 0 0 {GUTTER.x}px"
-						style:cursor={cursorFor(pen)}
+						style:cursor={bars ? 'default' : cursorFor(pen)}
 						style:--cell="{cell}px"
 						style:--label-size="{labelSize}px"
 						onmousedown={keepFocus}
@@ -702,6 +794,23 @@
 							{/each}
 
 							<path class="lines" d={linesPath} />
+							{#if barsPath}
+								<path class="bars" d={barsPath} />
+							{/if}
+
+							{#each edges as e (`${e.row},${e.col},${e.axis}`)}
+								{@const across = e.axis === 'across'}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<rect
+									class="grab"
+									x={across ? e.col + 1 - GRAB : e.col + GRAB}
+									y={across ? e.row : e.row + 1 - GRAB}
+									width={across ? GRAB * 2 : 1 - GRAB * 2}
+									height={across ? 1 : GRAB * 2}
+									onpointerdown={(ev) => onBarDown(ev, e)}
+									onpointerenter={(ev) => onBarEnter(ev, e)}
+								/>
+							{/each}
 
 							{#if caretPos}
 								<polygon class="arrow" points={arrowPoints(axis, caretPos.col, caretPos.row)} />
@@ -852,6 +961,8 @@
 	}
 
 	.setup {
+		--pair-gap: 0.5rem;
+		--pair-cols: minmax(0, 1fr) minmax(0, 1fr);
 		margin: auto;
 		width: min(26rem, calc(100% - 2rem));
 		box-sizing: border-box;
@@ -875,11 +986,61 @@
 		font-size: 0.9rem;
 		margin-bottom: 0.5rem;
 	}
-	.sizes {
+	.create-row {
+		display: grid;
+		grid-template-columns: var(--pair-cols);
+		align-items: stretch;
+		gap: var(--pair-gap);
+	}
+	.segmented {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem 1.5rem;
+		min-width: 0;
+	}
+	.setup .segment {
+		position: relative;
+		flex: 1 1 0;
+		min-width: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin: 0;
+		padding: 0 0.5rem;
+		font-weight: 600;
+		font-size: 0.8rem;
+		color: var(--ink);
+		background: var(--paper);
+		border: 2px solid var(--ink);
+		cursor: pointer;
+	}
+	.segment + .segment {
+		margin-left: -2px;
+	}
+	.segment:hover {
+		background: #f1f1ee;
+	}
+	.segment.on {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.segment input {
+		position: absolute;
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+	.segment:has(input:focus-visible) {
+		outline: 2px solid var(--rule);
+		outline-offset: 2px;
+	}
+
+	.sizes {
+		display: grid;
+		grid-template-columns: var(--pair-cols);
+		gap: 1rem var(--pair-gap);
 		margin-bottom: 1.5rem;
+	}
+	.sizes > div {
+		min-width: 0;
 	}
 	.size-row {
 		display: flex;
@@ -887,7 +1048,8 @@
 		gap: 0.4rem;
 	}
 	.size-row input {
-		width: 3.5rem;
+		flex: 1 1 0;
+		min-width: 0;
 		height: 2.5rem;
 		box-sizing: border-box;
 		text-align: center;
@@ -907,6 +1069,7 @@
 		margin: 0;
 	}
 	.step {
+		flex: none;
 		width: 2.5rem;
 		height: 2.5rem;
 		border: 2px solid var(--ink);
@@ -919,8 +1082,16 @@
 	.step:hover {
 		background: #f1f1ee;
 	}
+	@media (max-width: 24rem) {
+		.size-row {
+			gap: 0.25rem;
+		}
+		.step {
+			width: 2rem;
+		}
+	}
 	.primary {
-		width: 100%;
+		min-width: 0;
 		padding: 0.85rem 1rem;
 		border: 0;
 		background: var(--ink);
@@ -1405,6 +1576,20 @@
 	path.lines {
 		fill: #000;
 		pointer-events: none;
+	}
+
+	path.bars {
+		fill: #000;
+		pointer-events: none;
+	}
+
+	.grab {
+		fill: transparent;
+		cursor: pointer;
+	}
+	.grab:hover {
+		fill: var(--caret);
+		fill-opacity: 0.5;
 	}
 
 	.arrow {

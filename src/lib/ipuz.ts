@@ -1,18 +1,22 @@
 import {
 	MAX_SIZE,
 	MIN_SIZE,
+	emptySquare,
 	entryId,
 	keyOf,
 	numberEntries,
 	validSize,
+	wallsOf,
 	type Axis,
 	type Entry,
-	type Grid
+	type Grid,
+	type GridMode
 } from './crossword';
 
 export interface Puzzle {
 	rows: number;
 	cols: number;
+	mode: GridMode;
 	grid: Grid;
 	clues: Record<string, string>;
 	title: string;
@@ -35,7 +39,8 @@ const MANAGED = new Set([
 	'block',
 	'empty',
 	'saved',
-	'checksum'
+	'checksum',
+	'styles'
 ]);
 
 const toHtml = (text: string) =>
@@ -48,9 +53,20 @@ function toText(html: unknown): string {
 	return (doc.body.textContent ?? '').trim();
 }
 
+function barsAt(grid: Grid, rows: number, cols: number, r: number, c: number): string {
+	const at = (row: number, col: number, side: 'barRight' | 'barBottom') =>
+		row >= 0 && col >= 0 && row < rows && col < cols && grid[keyOf(row, col)][side];
+	return (
+		(at(r - 1, c, 'barBottom') ? 'T' : '') +
+		(at(r, c - 1, 'barRight') ? 'L' : '') +
+		(at(r, c, 'barBottom') ? 'B' : '') +
+		(at(r, c, 'barRight') ? 'R' : '')
+	);
+}
+
 export function toIpuz(p: Puzzle) {
 	const isBlack = (key: string) => p.grid[key].black;
-	const { numbers, entries } = numberEntries(p.rows, p.cols, isBlack);
+	const { numbers, entries } = numberEntries(p.rows, p.cols, wallsOf(p.grid));
 	const rowsOf = (cell: (key: string) => string | number) =>
 		Array.from({ length: p.rows }, (_, r) =>
 			Array.from({ length: p.cols }, (_, c) => {
@@ -58,6 +74,15 @@ export function toIpuz(p: Puzzle) {
 				return isBlack(key) ? BLOCK : cell(key);
 			})
 		);
+	const label = (key: string) => numbers.get(key) ?? EMPTY;
+	const puzzle = Array.from({ length: p.rows }, (_, r) =>
+		Array.from({ length: p.cols }, (_, c) => {
+			const key = keyOf(r, c);
+			const cell = isBlack(key) ? BLOCK : label(key);
+			const barred = barsAt(p.grid, p.rows, p.cols, r, c);
+			return barred ? { cell, style: { barred } } : cell;
+		})
+	);
 	const cluesFor = (axis: Axis) =>
 		entries
 			.filter((e) => e.axis === axis)
@@ -69,7 +94,7 @@ export function toIpuz(p: Puzzle) {
 		...(title && { title: toHtml(title) }),
 		...p.extra,
 		dimensions: { width: p.cols, height: p.rows },
-		puzzle: rowsOf((key) => numbers.get(key) ?? EMPTY),
+		puzzle,
 		solution: rowsOf((key) => p.grid[key].letter || EMPTY),
 		clues: { Across: cluesFor('across'), Down: cluesFor('down') }
 	};
@@ -108,6 +133,13 @@ export function fromIpuz(data: unknown): Puzzle {
 	const block = scalar(data.block) ?? BLOCK;
 	const empty = scalar(data.empty) ?? String(EMPTY);
 	const solution = Array.isArray(data.solution) ? data.solution : [];
+	const named = isRecord(data.styles) ? data.styles : {};
+	const sides = (r: number, c: number): string => {
+		const style = isRecord(source[r]?.[c]) ? (source[r][c] as Record<string, unknown>).style : null;
+		const spec = typeof style === 'string' ? named[style] : style;
+		const barred = isRecord(spec) ? spec.barred : undefined;
+		return typeof barred === 'string' ? barred.toUpperCase() : '';
+	};
 	const grid: Grid = {};
 	const labelled = new Map<string, string>();
 	for (let r = 0; r < rows; r++) {
@@ -120,13 +152,21 @@ export function fromIpuz(data: unknown): Puzzle {
 			const value = field(Array.isArray(answers) ? answers[c] : undefined, 'value');
 			const filled = scalar(value)?.trim() ?? '';
 			const letter = black || filled === empty || filled === block ? '' : filled;
-			grid[key] = { black, letter: letter.toLocaleUpperCase() };
+			const here = sides(r, c);
+			grid[key] = {
+				...emptySquare(),
+				black,
+				letter: letter.toLocaleUpperCase(),
+				barRight: c + 1 < cols && (here.includes('R') || sides(r, c + 1).includes('L')),
+				barBottom: r + 1 < rows && (here.includes('B') || sides(r + 1, c).includes('T'))
+			};
 			if (black || label === undefined) continue;
 			if (label !== empty && !labelled.has(label)) labelled.set(label, key);
 		}
 	}
 
-	const { entries } = numberEntries(rows, cols, (key) => grid[key].black);
+	const barred = Object.values(grid).some((s) => s.barRight || s.barBottom);
+	const { entries } = numberEntries(rows, cols, wallsOf(grid));
 	const clues: Record<string, string> = {};
 	for (const [direction, list] of Object.entries(isRecord(data.clues) ? data.clues : {})) {
 		const axis = AXES[direction.split(':')[0].trim().toLowerCase()];
@@ -156,6 +196,7 @@ export function fromIpuz(data: unknown): Puzzle {
 	return {
 		rows,
 		cols,
+		mode: barred ? 'bars' : 'squares',
 		grid,
 		clues,
 		title: toText(data.title),

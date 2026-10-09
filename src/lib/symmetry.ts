@@ -1,4 +1,4 @@
-import { keyOf } from './crossword';
+import { keyOf, step, type Axis } from './crossword';
 
 export type SymmetryKey =
 	'diagonal' | 'antidiagonal' | 'vertical' | 'horizontal' | 'rot180' | 'rot90';
@@ -152,6 +152,9 @@ export function describeSymmetry(active: Iterable<SymmetryKey>): string {
 	return GROUP_NAMES[id] ?? `${held.size} symmetries`;
 }
 
+const activeTransforms = (active: Iterable<SymmetryKey>, rows: number, cols: number) =>
+	[...active].filter((k) => fitsGrid(k, rows, cols)).map((k) => BY_KEY.get(k)!.transform);
+
 export function counterparts(
 	row: number,
 	col: number,
@@ -159,9 +162,7 @@ export function counterparts(
 	cols: number,
 	active: Iterable<SymmetryKey>
 ): string[] {
-	const transforms = [...active]
-		.filter((k) => fitsGrid(k, rows, cols))
-		.map((k) => BY_KEY.get(k)!.transform);
+	const transforms = activeTransforms(active, rows, cols);
 	const start = keyOf(row, col);
 	const seen = new Set([start]);
 	const queue: [number, number][] = [[row, col]];
@@ -176,4 +177,44 @@ export function counterparts(
 	}
 	seen.delete(start);
 	return [...seen];
+}
+
+export interface Bar {
+	row: number;
+	col: number;
+	axis: Axis;
+}
+
+const barKey = ({ row, col, axis }: Bar) => `${row},${col},${axis}`;
+
+function mapBar(transform: Transform, bar: Bar, rows: number, cols: number): Bar {
+	const [nr, nc] = step(bar.row, bar.col, bar.axis);
+	const [ar, ac] = transform(bar.row, bar.col, rows, cols);
+	const [br, bc] = transform(nr, nc, rows, cols);
+	return ar === br
+		? { row: ar, col: Math.min(ac, bc), axis: 'across' }
+		: { row: Math.min(ar, br), col: ac, axis: 'down' };
+}
+
+export function barCounterparts(
+	bar: Bar,
+	rows: number,
+	cols: number,
+	active: Iterable<SymmetryKey>
+): Bar[] {
+	const transforms = activeTransforms(active, rows, cols);
+	const start = barKey(bar);
+	const seen = new Map([[start, bar]]);
+	const queue: Bar[] = [bar];
+	for (const b of queue) {
+		for (const t of transforms) {
+			const next = mapBar(t, b, rows, cols);
+			const key = barKey(next);
+			if (seen.has(key)) continue;
+			seen.set(key, next);
+			queue.push(next);
+		}
+	}
+	seen.delete(start);
+	return [...seen.values()];
 }
