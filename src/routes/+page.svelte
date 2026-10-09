@@ -64,6 +64,27 @@
 
 	const numbering = $derived(size ? numberEntries(size.rows, size.cols, walls) : null);
 
+	const stats = $derived.by(() => {
+		if (!size) return null;
+		const total = size.rows * size.cols;
+		let black = 0;
+		for (const { key } of cells) if (grid[key]?.black) black++;
+		const blackPct = Math.round((black / total) * 100);
+		const entries = numbering?.entries ?? [];
+		const across = entries.filter((e) => e.axis === 'across').length;
+		return {
+			total,
+			dims: `${size.rows} × ${size.cols}`,
+			white: total - black,
+			black,
+			whitePct: 100 - blackPct,
+			blackPct,
+			entries: entries.length,
+			across,
+			down: entries.length - across
+		};
+	});
+
 	const BLANK = '·';
 
 	type ClueRow = { id: string; number: number; word: string; keys: string[] };
@@ -940,6 +961,47 @@
 					</aside>
 				</div>
 			</div>
+
+			{#if stats}
+				<footer class="status" aria-label="Grid statistics">
+					<div class="status-group">
+						<span class="stat">
+							<span class="stat-label">Total squares</span>
+							<span class="stat-value">{stats.total}</span>
+							<span class="stat-note" title="Rows × columns">({stats.dims})</span>
+						</span>
+						{#if !bars || stats.black > 0}
+							<span class="stat">
+								<span class="stat-label">White squares</span>
+								<span class="stat-value">{stats.white}</span>
+								<span class="stat-note">({stats.whitePct}%)</span>
+							</span>
+							<span class="stat">
+								<span class="stat-label">Black squares</span>
+								<span class="stat-value">{stats.black}</span>
+								<span class="stat-note">({stats.blackPct}%)</span>
+							</span>
+						{/if}
+					</div>
+
+					<span class="status-split" aria-hidden="true"></span>
+
+					<div class="status-group">
+						<span class="stat">
+							<span class="stat-label">Total entries</span>
+							<span class="stat-value">{stats.entries}</span>
+						</span>
+						<span class="stat">
+							<span class="stat-label">Across entries</span>
+							<span class="stat-value">{stats.across}</span>
+						</span>
+						<span class="stat">
+							<span class="stat-label">Down entries</span>
+							<span class="stat-value">{stats.down}</span>
+						</span>
+					</div>
+				</footer>
+			{/if}
 		</div>
 	{/if}
 </main>
@@ -1539,6 +1601,57 @@
 		place-items: center;
 		overflow: auto;
 	}
+	.status {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.4rem 1rem;
+		padding: 0.5rem 1.25rem;
+		border-top: 1px solid rgb(255 255 255 / 0.14);
+		background: rgb(0 0 0 / 0.2);
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+		line-height: 1.4;
+	}
+	.status-group {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.55rem;
+	}
+	.status-split {
+		width: 1px;
+		align-self: stretch;
+		min-height: 1rem;
+		background: rgb(255 255 255 / 0.22);
+	}
+	.stat {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.3rem;
+		white-space: nowrap;
+	}
+	.stat + .stat::before {
+		content: '';
+		width: 1px;
+		align-self: stretch;
+		margin-right: 0.25rem;
+		background: rgb(255 255 255 / 0.16);
+	}
+	.stat-label {
+		color: var(--on-mat-dim);
+	}
+	.stat-value {
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.stat-note {
+		color: var(--on-mat-dim);
+		font-size: 0.72rem;
+	}
+
 	.sheet {
 		position: relative;
 		touch-action: manipulation;
@@ -1670,6 +1783,13 @@
 		}
 		.pen-label,
 		kbd {
+			display: none;
+		}
+		.status {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.72rem;
+		}
+		.status-split {
 			display: none;
 		}
 	}
