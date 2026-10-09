@@ -10,8 +10,12 @@
 		entryId,
 		keyOf,
 		numberEntries,
+		otherAxis,
 		parseKey,
 		runFrom,
+		transposeEntryId,
+		transposeGrid,
+		transposeKey,
 		validSize,
 		wallsOf,
 		type Axis,
@@ -19,12 +23,14 @@
 		type GridMode
 	} from '$lib/crossword';
 	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
+	import { rewriteReferences, transposeReferences } from '$lib/references';
 	import {
 		barCounterparts,
 		counterparts,
 		describeSymmetry,
 		fitsGrid,
 		symmetryOptions,
+		transposeSymmetry,
 		type Bar,
 		type SymmetryKey,
 		type SymmetryOption
@@ -338,6 +344,31 @@
 		if (used && !confirm('Start a new grid? This clears the current puzzle.')) return;
 		editing = null;
 		size = null;
+	}
+
+	function transpose() {
+		if (!size) return;
+		const { rows, cols } = size;
+		const flipped = transposeGrid(grid, rows, cols);
+		const moved = transposeReferences(
+			numberEntries(rows, cols, wallsOf(grid)),
+			numberEntries(cols, rows, wallsOf(flipped))
+		);
+		grid = flipped;
+		clues = Object.fromEntries(
+			Object.entries(clues).map(([id, text]) => [
+				transposeEntryId(id),
+				rewriteReferences(text, moved)
+			])
+		);
+		if (activeClue) activeClue = transposeEntryId(activeClue);
+		if (editing) editing = { keys: editing.keys.map(transposeKey), idx: editing.idx };
+		axis = otherAxis(axis);
+		chosenSymmetry = transposeSymmetry(chosenSymmetry);
+		hoverKey = null;
+		symmetryOpen = false;
+		sizeInput = { rows: cols, cols: rows };
+		size = { rows: cols, cols: rows };
 	}
 
 	function paint(key: string) {
@@ -714,6 +745,20 @@
 								</div>
 							{/if}
 						</div>
+
+						<button
+							class="chip"
+							onmousedown={keepFocus}
+							onclick={transpose}
+							title="Flip the grid about its main diagonal"
+						>
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+								<path d="M2.5 2.5l11 11" stroke-dasharray="2 2.2" />
+								<path d="M12.5 4.5h-7M8 2 5.5 4.5 8 7" />
+								<path d="M4.5 12.5v-7M2 8l2.5-2.5L7 8" />
+							</svg>
+							Transpose
+						</button>
 
 						<button
 							class="chip"

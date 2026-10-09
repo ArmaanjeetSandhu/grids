@@ -77,6 +77,15 @@ const PERMS = new Map(
 	])
 );
 
+const TRANSPOSED: Partial<Record<SymmetryKey, SymmetryKey>> = {
+	vertical: 'horizontal',
+	horizontal: 'vertical'
+};
+
+export const transposeSymmetry = (keys: readonly SymmetryKey[]): SymmetryKey[] => [
+	...new Set(keys.map((k) => TRANSPOSED[k] ?? k))
+];
+
 export function closure(keys: Iterable<SymmetryKey>): Set<SymmetryKey> {
 	const generators = [...new Set(keys)].map((k) => PERMS.get(k)!);
 	const seen = new Set([IDENTITY.join()]);

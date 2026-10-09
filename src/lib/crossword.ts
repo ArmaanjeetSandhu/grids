@@ -30,12 +30,32 @@ export function allKeys(rows: number, cols: number): string[] {
 	return keys;
 }
 
+export const transposeKey = (key: string) => {
+	const here = parseKey(key);
+	return keyOf(here.col, here.row);
+};
+
 export const emptySquare = (): Square => ({
 	black: false,
 	letter: '',
 	barRight: false,
 	barBottom: false
 });
+
+export function transposeGrid(grid: Grid, rows: number, cols: number): Grid {
+	const flipped: Grid = {};
+	for (let r = 0; r < rows; r++)
+		for (let c = 0; c < cols; c++) {
+			const square = grid[keyOf(r, c)];
+			flipped[keyOf(c, r)] = {
+				black: square.black,
+				letter: square.letter,
+				barRight: square.barBottom,
+				barBottom: square.barRight
+			};
+		}
+	return flipped;
+}
 
 export const barField = (axis: Axis): 'barRight' | 'barBottom' =>
 	axis === 'across' ? 'barRight' : 'barBottom';
@@ -85,6 +105,19 @@ export interface Numbering {
 }
 
 export const entryId = (e: Pick<Entry, 'axis' | 'keys'>) => `${e.axis}:${e.keys.join('|')}`;
+
+export const otherAxis = (axis: Axis): Axis => (axis === 'across' ? 'down' : 'across');
+
+export function transposeEntryId(id: string): string {
+	const split = id.indexOf(':');
+	if (split < 0) return id;
+	const axis = id.slice(0, split) as Axis;
+	const keys = id
+		.slice(split + 1)
+		.split('|')
+		.map(transposeKey);
+	return entryId({ axis: otherAxis(axis), keys });
+}
 
 export function numberEntries(rows: number, cols: number, walls: Walls): Numbering {
 	const white = (r: number, c: number) =>
