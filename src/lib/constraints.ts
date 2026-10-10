@@ -5,30 +5,22 @@ export type ConstraintKey = 'interlock' | 'unches' | 'cheaters';
 export interface Constraint {
 	key: ConstraintKey;
 	label: string;
-	short: string;
 }
 
 export const CONSTRAINTS: readonly Constraint[] = [
 	{
 		key: 'interlock',
-		label: 'All-over interlock',
-		short: 'interlock'
+		label: 'All-over interlock'
 	},
 	{
 		key: 'unches',
-		label: 'No unches',
-		short: 'no unches'
+		label: 'No unches'
 	},
 	{
 		key: 'cheaters',
-		label: 'Cheater squares',
-		short: 'cheaters'
+		label: 'Cheater squares'
 	}
 ];
-
-const BY_KEY = new Map(CONSTRAINTS.map((c) => [c.key, c]));
-
-export const constraintLabel = (key: ConstraintKey) => BY_KEY.get(key)!.label;
 
 export const constraintApplies = (key: ConstraintKey, mode: GridMode, hasBlack: boolean) =>
 	key !== 'cheaters' || mode === 'squares' || hasBlack;
