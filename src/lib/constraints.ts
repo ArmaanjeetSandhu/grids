@@ -1,6 +1,15 @@
-import { keyOf, step, type Axis, type Entry, type GridMode, type Walls } from './crossword';
+import {
+	keyOf,
+	parseKey,
+	step,
+	type Axis,
+	type Entry,
+	type GridMode,
+	type Walls
+} from './crossword';
 
-export type ConstraintKey = 'interlock' | 'unches' | 'cheaters' | 'twoLetters';
+export type ConstraintKey =
+	'interlock' | 'unches' | 'consecutiveUnches' | 'cheaters' | 'twoLetters';
 
 export interface Constraint {
 	key: ConstraintKey;
@@ -17,6 +26,10 @@ export const CONSTRAINTS: readonly Constraint[] = [
 		label: 'No unches'
 	},
 	{
+		key: 'consecutiveUnches',
+		label: 'No consecutive unches'
+	},
+	{
 		key: 'cheaters',
 		label: 'Cheater squares'
 	},
@@ -27,7 +40,20 @@ export const CONSTRAINTS: readonly Constraint[] = [
 ];
 
 export const constraintApplies = (key: ConstraintKey, mode: GridMode, hasBlack: boolean) =>
-	key !== 'cheaters' || mode === 'squares' || hasBlack;
+	key !== 'cheaters' || mode === 'blocks' || hasBlack;
+
+const IMPLIED_BY: Partial<Record<ConstraintKey, ConstraintKey>> = {
+	consecutiveUnches: 'unches'
+};
+
+export function impliedBy(key: ConstraintKey, chosen: readonly ConstraintKey[]): Constraint | null {
+	const source = IMPLIED_BY[key];
+	if (source === undefined || !chosen.includes(source)) return null;
+	return CONSTRAINTS.find((c) => c.key === source) ?? null;
+}
+
+export const heldConstraints = (chosen: readonly ConstraintKey[]): ConstraintKey[] =>
+	CONSTRAINTS.map((c) => c.key).filter((k) => chosen.includes(k) || impliedBy(k, chosen));
 
 export const REGION_COLOURS = 4;
 
@@ -204,6 +230,27 @@ export function unchedSquares(rows: number, cols: number, walls: Walls): Set<str
 	return unched;
 }
 
+export function consecutiveUnches(unched: ReadonlySet<string>, walls: Walls): string[][] {
+	const sequences: string[][] = [];
+	for (const start of unched) {
+		const { row, col } = parseKey(start);
+		for (const axis of ['across', 'down'] as const) {
+			const [pr, pc] = axis === 'across' ? [row, col - 1] : [row - 1, col];
+			if (unched.has(keyOf(pr, pc)) && !walls.bar(pr, pc, axis)) continue;
+			const sequence = [start];
+			let [r, c] = [row, col];
+			while (!walls.bar(r, c, axis)) {
+				[r, c] = step(r, c, axis);
+				const key = keyOf(r, c);
+				if (!unched.has(key)) break;
+				sequence.push(key);
+			}
+			if (sequence.length > 1) sequences.push(sequence);
+		}
+	}
+	return sequences;
+}
+
 function entriesAlong(
 	row: number,
 	col: number,
@@ -256,6 +303,12 @@ function describeUnches(unched: Set<string> | null): string {
 	return count(unched.size, 'unch', 'unches');
 }
 
+function describeConsecutiveUnches(consecutive: Set<string> | null): string {
+	if (consecutive === null) return 'no consecutive unches';
+	if (consecutive.size === 0) return 'No consecutive unches';
+	return `${consecutive.size} consecutive unches`;
+}
+
 function describeCheaters(cheaters: Set<string> | null): string {
 	if (cheaters === null) return 'cheaters';
 	if (cheaters.size === 0) return 'No cheaters';
@@ -272,6 +325,7 @@ export function describeConstraints(
 	chosen: Iterable<ConstraintKey>,
 	regions: Regions | null,
 	unched: Set<string> | null,
+	consecutive: Set<string> | null,
 	cheaters: Set<string> | null,
 	twoLetters: Entry[] | null
 ): string {
@@ -281,6 +335,7 @@ export function describeConstraints(
 	const parts: string[] = [];
 	if (held.has('interlock')) parts.push(describeInterlock(regions));
 	if (held.has('unches')) parts.push(describeUnches(unched));
+	else if (held.has('consecutiveUnches')) parts.push(describeConsecutiveUnches(consecutive));
 	if (held.has('cheaters')) parts.push(describeCheaters(cheaters));
 	if (held.has('twoLetters')) parts.push(describeTwoLetters(twoLetters));
 	return parts.join(' + ');

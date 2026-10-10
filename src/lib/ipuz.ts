@@ -196,7 +196,7 @@ export function fromIpuz(data: unknown): Puzzle {
 	return {
 		rows,
 		cols,
-		mode: barred ? 'bars' : 'squares',
+		mode: barred ? 'bars' : 'blocks',
 		grid,
 		clues,
 		title: toText(data.title),

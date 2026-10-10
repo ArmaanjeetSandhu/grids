@@ -1,6 +1,6 @@
 export type Axis = 'across' | 'down';
 
-export type GridMode = 'squares' | 'bars';
+export type GridMode = 'blocks' | 'bars';
 
 export interface Square {
 	black: boolean;

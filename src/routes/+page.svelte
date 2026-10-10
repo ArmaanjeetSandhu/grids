@@ -26,8 +26,11 @@
 	import {
 		CONSTRAINTS,
 		cheaterSquares,
+		consecutiveUnches,
 		constraintApplies,
 		describeConstraints,
+		heldConstraints,
+		impliedBy,
 		regionColours,
 		twoLetterEntries,
 		unchedSquares,
@@ -56,14 +59,14 @@
 	] as const;
 
 	const MODES = [
-		['squares', 'Squares'],
+		['blocks', 'Blocks'],
 		['bars', 'Bars']
 	] as const satisfies readonly (readonly [GridMode, string])[];
 
 	let sizeInput = $state({ rows: 15, cols: 15 });
-	let modeInput = $state<GridMode>('squares');
+	let modeInput = $state<GridMode>('blocks');
 	let size = $state.raw<{ rows: number; cols: number } | null>(null);
-	let mode = $state<GridMode>('squares');
+	let mode = $state<GridMode>('blocks');
 	const bars = $derived(mode === 'bars');
 
 	let grid = $state<Grid>({});
@@ -187,27 +190,37 @@
 		CONSTRAINTS.filter((c) => constraintApplies(c.key, mode, (stats?.black ?? 0) > 0))
 	);
 
-	const interlock = $derived(chosenConstraints.includes('interlock'));
+	const activeConstraints = $derived(heldConstraints(chosenConstraints));
+
+	const interlock = $derived(activeConstraints.includes('interlock'));
 	const regions = $derived(size && interlock ? whiteRegions(size.rows, size.cols, walls) : null);
 	const shades = $derived(
 		size && regions ? regionColours(regions, size.rows, size.cols) : new Map<string, number>()
 	);
-	const noUnches = $derived(chosenConstraints.includes('unches'));
-	const unched = $derived(size && noUnches ? unchedSquares(size.rows, size.cols, walls) : null);
-	const flagCheaters = $derived(chosenConstraints.includes('cheaters'));
+	const noUnches = $derived(activeConstraints.includes('unches'));
+	const noConsecutiveUnches = $derived(activeConstraints.includes('consecutiveUnches'));
+	const unchecked = $derived(
+		size && (noUnches || noConsecutiveUnches) ? unchedSquares(size.rows, size.cols, walls) : null
+	);
+	const unched = $derived(noUnches ? unchecked : null);
+	const sequences = $derived(unchecked && consecutiveUnches(unchecked, walls));
+	const consecutive = $derived(sequences && !noUnches ? new Set(sequences.flat()) : null);
+	const flashing = $derived(unched ?? consecutive);
+	const flagCheaters = $derived(activeConstraints.includes('cheaters'));
 	const cheaters = $derived(
 		size && flagCheaters ? cheaterSquares(size.rows, size.cols, walls) : null
 	);
-	const flagTwoLetters = $derived(chosenConstraints.includes('twoLetters'));
+	const flagTwoLetters = $derived(activeConstraints.includes('twoLetters'));
 	const twoLetters = $derived(
 		numbering && flagTwoLetters ? twoLetterEntries(numbering.entries) : null
 	);
 	const twoLetterSquares = $derived(new Set(twoLetters?.flatMap((e) => e.keys)));
 	const constraintsName = $derived(
-		describeConstraints(chosenConstraints, regions, unched, cheaters, twoLetters)
+		describeConstraints(activeConstraints, regions, unched, consecutive, cheaters, twoLetters)
 	);
 
 	function toggleConstraint(key: ConstraintKey) {
+		if (impliedBy(key, chosenConstraints)) return;
 		chosenConstraints = chosenConstraints.includes(key)
 			? chosenConstraints.filter((k) => k !== key)
 			: [...chosenConstraints, key];
@@ -313,6 +326,19 @@
 		const y = snap(r.top);
 		if (Math.abs(x - shift.x) > 1e-3 || Math.abs(y - shift.y) > 1e-3) shift = { x, y };
 	}
+	$effect(() => {
+		const el = sheet;
+		if (!sequences || !el) return;
+		for (const sequence of sequences) {
+			const flashes = sequence.flatMap(
+				(key) => el.querySelector(`rect.unched[data-key="${key}"]`)?.getAnimations() ?? []
+			);
+			const running = flashes.map((flash) => flash.startTime).filter((t) => typeof t === 'number');
+			if (!running.length) continue;
+			const start = Math.min(...running);
+			for (const flash of flashes) if (flash.startTime !== start) flash.startTime = start;
+		}
+	});
 	let layoutEl = $state<HTMLDivElement>();
 	$effect(() => {
 		void [cellDev, dpr, size, winW];
@@ -849,10 +875,12 @@
 										Constraints only flag what they find. Nothing in the grid is changed for you.
 									</p>
 									{#each offeredConstraints as c (c.key)}
-										<label class="option">
+										{@const implier = impliedBy(c.key, chosenConstraints)}
+										<label class="option" class:locked={implier !== null}>
 											<input
 												type="checkbox"
-												checked={chosenConstraints.includes(c.key)}
+												checked={activeConstraints.includes(c.key)}
+												disabled={implier !== null}
 												onchange={() => toggleConstraint(c.key)}
 											/>
 											<svg
@@ -871,6 +899,10 @@
 												{:else if c.key === 'twoLetters'}
 													<rect x="2" y="5" width="12" height="6" />
 													<path class="axis" d="M8 5v6" />
+												{:else if c.key === 'consecutiveUnches'}
+													<rect x="1.5" y="5" width="6.5" height="6" />
+													<rect x="8" y="5" width="6.5" height="6" />
+													<path class="axis" d="M1.5 8h13" />
 												{:else}
 													<rect x="3" y="3" width="10" height="10" />
 													<path class="axis" d="M3 8h10" />
@@ -878,10 +910,13 @@
 											</svg>
 											<span class="option-text">
 												<span class="option-label">{c.label}</span>
+												{#if implier}
+													<span class="option-hint">Implied by {implier.label.toLowerCase()}</span>
+												{/if}
 											</span>
 										</label>
 									{/each}
-									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (cheaters && cheaters.size > 0) || (twoLetters && twoLetters.length > 0)}
+									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (consecutive && consecutive.size > 0) || (cheaters && cheaters.size > 0) || (twoLetters && twoLetters.length > 0)}
 										<p class="menu-note" role="status">
 											{#if interlock && regions && regions.count > 1}
 												The white squares fall into {regions.count} separate regions, shaded below.
@@ -890,6 +925,9 @@
 												{unched.size === 1
 													? 'One white square is unchecked'
 													: `${unched.size} white squares are unchecked`}, flashing below.
+											{/if}
+											{#if consecutive && consecutive.size > 0}
+												{consecutive.size} white squares are consecutive unches, flashing below.
 											{/if}
 											{#if cheaters && cheaters.size > 0}
 												{cheaters.size === 1
@@ -1008,8 +1046,8 @@
 									onpointerenter={(e) => onCellEnter(e, key)}
 									ondblclick={() => onCellDouble(key)}
 								/>
-								{#if unched?.has(key)}
-									<rect class="unched" x={col} y={row} width="1" height="1" />
+								{#if flashing?.has(key)}
+									<rect class="unched" data-key={key} x={col} y={row} width="1" height="1" />
 								{/if}
 								{#if cheaters?.has(key)}
 									<image class="cheater" href={smirk} x={col} y={row} width="1" height="1" />
