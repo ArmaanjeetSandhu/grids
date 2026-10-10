@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Halftone from '$lib/Halftone.svelte';
+	import smirk from '$lib/assets/smirk.svg';
 	import {
 		MAX_SIZE,
 		MIN_SIZE,
@@ -24,6 +25,8 @@
 	} from '$lib/crossword';
 	import {
 		CONSTRAINTS,
+		cheaterSquares,
+		constraintApplies,
 		describeConstraints,
 		regionColours,
 		unchedSquares,
@@ -179,6 +182,10 @@
 	let constraintsOpen = $state(false);
 	let constraintsEl = $state<HTMLDivElement>();
 
+	const offeredConstraints = $derived(
+		CONSTRAINTS.filter((c) => constraintApplies(c.key, mode, (stats?.black ?? 0) > 0))
+	);
+
 	const interlock = $derived(chosenConstraints.includes('interlock'));
 	const regions = $derived(size && interlock ? whiteRegions(size.rows, size.cols, walls) : null);
 	const shades = $derived(
@@ -186,7 +193,13 @@
 	);
 	const noUnches = $derived(chosenConstraints.includes('unches'));
 	const unched = $derived(size && noUnches ? unchedSquares(size.rows, size.cols, walls) : null);
-	const constraintsName = $derived(describeConstraints(chosenConstraints, regions, unched));
+	const flagCheaters = $derived(chosenConstraints.includes('cheaters'));
+	const cheaters = $derived(
+		size && flagCheaters ? cheaterSquares(size.rows, size.cols, walls) : null
+	);
+	const constraintsName = $derived(
+		describeConstraints(chosenConstraints, regions, unched, cheaters)
+	);
 
 	function toggleConstraint(key: ConstraintKey) {
 		chosenConstraints = chosenConstraints.includes(key)
@@ -346,6 +359,8 @@
 		symmetryOpen = false;
 		constraintsOpen = false;
 		chosenSymmetry = chosenSymmetry.filter((k) => fitsGrid(k, p.rows, p.cols));
+		const hasBlack = Object.values(p.grid).some((s) => s.black);
+		chosenConstraints = chosenConstraints.filter((k) => constraintApplies(k, p.mode, hasBlack));
 		sizeInput = { rows: p.rows, cols: p.cols };
 		modeInput = p.mode;
 		mode = p.mode;
@@ -827,7 +842,7 @@
 									<p>
 										Constraints only flag what they find. Nothing in the grid is changed for you.
 									</p>
-									{#each CONSTRAINTS as c (c.key)}
+									{#each offeredConstraints as c (c.key)}
 										<label class="option">
 											<input
 												type="checkbox"
@@ -844,6 +859,9 @@
 												{#if c.key === 'interlock'}
 													<path d="M3 6.5h6.5V13" />
 													<path class="axis" d="M6.5 3v6.5H13" />
+												{:else if c.key === 'cheaters'}
+													<rect x="3" y="3" width="10" height="10" />
+													<path class="axis" d="M5.5 9.3q3 1.6 5-1.3" />
 												{:else}
 													<rect x="3" y="3" width="10" height="10" />
 													<path class="axis" d="M3 8h10" />
@@ -854,7 +872,7 @@
 											</span>
 										</label>
 									{/each}
-									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0)}
+									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (cheaters && cheaters.size > 0)}
 										<p class="menu-note" role="status">
 											{#if interlock && regions && regions.count > 1}
 												The white squares fall into {regions.count} separate regions, shaded below.
@@ -863,6 +881,11 @@
 												{unched.size === 1
 													? 'One white square is unchecked'
 													: `${unched.size} white squares are unchecked`}, flashing below.
+											{/if}
+											{#if cheaters && cheaters.size > 0}
+												{cheaters.size === 1
+													? 'One black square is a cheater'
+													: `${cheaters.size} black squares are cheaters`}, smirking below.
 											{/if}
 										</p>
 									{/if}
@@ -962,6 +985,9 @@
 								/>
 								{#if unched?.has(key)}
 									<rect class="unched" x={col} y={row} width="1" height="1" />
+								{/if}
+								{#if cheaters?.has(key)}
+									<image class="cheater" href={smirk} x={col} y={row} width="1" height="1" />
 								{/if}
 								{#if sq.letter && !sq.black}
 									<text
@@ -1878,6 +1904,10 @@
 			animation: none;
 			opacity: 0.6;
 		}
+	}
+
+	image.cheater {
+		pointer-events: none;
 	}
 
 	text {

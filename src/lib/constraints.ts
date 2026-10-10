@@ -1,6 +1,6 @@
-import { keyOf, step, type Axis, type Walls } from './crossword';
+import { keyOf, step, type Axis, type GridMode, type Walls } from './crossword';
 
-export type ConstraintKey = 'interlock' | 'unches';
+export type ConstraintKey = 'interlock' | 'unches' | 'cheaters';
 
 export interface Constraint {
 	key: ConstraintKey;
@@ -18,12 +18,20 @@ export const CONSTRAINTS: readonly Constraint[] = [
 		key: 'unches',
 		label: 'No unches',
 		short: 'no unches'
+	},
+	{
+		key: 'cheaters',
+		label: 'Cheater squares',
+		short: 'cheaters'
 	}
 ];
 
 const BY_KEY = new Map(CONSTRAINTS.map((c) => [c.key, c]));
 
 export const constraintLabel = (key: ConstraintKey) => BY_KEY.get(key)!.label;
+
+export const constraintApplies = (key: ConstraintKey, mode: GridMode, hasBlack: boolean) =>
+	key !== 'cheaters' || mode === 'squares' || hasBlack;
 
 export const REGION_COLOURS = 4;
 
@@ -200,6 +208,41 @@ export function unchedSquares(rows: number, cols: number, walls: Walls): Set<str
 	return unched;
 }
 
+function entriesAlong(
+	row: number,
+	col: number,
+	axis: Axis,
+	rows: number,
+	cols: number,
+	walls: Walls
+): number {
+	const across = axis === 'across';
+	const length = across ? cols : rows;
+	const white = (i: number) =>
+		i >= 0 && i < length && !walls.black(across ? keyOf(row, i) : keyOf(i, col));
+	const joined = (i: number) =>
+		white(i) && white(i + 1) && !walls.bar(across ? row : i, across ? i : col, axis);
+
+	let entries = 0;
+	for (let i = 0; i < length - 1; i++) if (joined(i) && !joined(i - 1)) entries++;
+	return entries;
+}
+
+export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<string> {
+	const entriesThrough = (r: number, c: number, w: Walls) =>
+		entriesAlong(r, c, 'across', rows, cols, w) + entriesAlong(r, c, 'down', rows, cols, w);
+
+	const cheaters = new Set<string>();
+	for (let r = 0; r < rows; r++)
+		for (let c = 0; c < cols; c++) {
+			const key = keyOf(r, c);
+			if (!walls.black(key)) continue;
+			const opened: Walls = { black: (k) => k !== key && walls.black(k), bar: walls.bar };
+			if (entriesThrough(r, c, opened) === entriesThrough(r, c, walls)) cheaters.add(key);
+		}
+	return cheaters;
+}
+
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function describeInterlock(regions: Regions | null): string {
@@ -214,10 +257,17 @@ function describeUnches(unched: Set<string> | null): string {
 	return count(unched.size, 'unch', 'unches');
 }
 
+function describeCheaters(cheaters: Set<string> | null): string {
+	if (cheaters === null) return 'cheaters';
+	if (cheaters.size === 0) return 'No cheaters';
+	return count(cheaters.size, 'cheater', 'cheaters');
+}
+
 export function describeConstraints(
 	chosen: Iterable<ConstraintKey>,
 	regions: Regions | null,
-	unched: Set<string> | null
+	unched: Set<string> | null,
+	cheaters: Set<string> | null
 ): string {
 	const held = new Set(chosen);
 	if (held.size === 0) return 'Off';
@@ -225,5 +275,6 @@ export function describeConstraints(
 	const parts: string[] = [];
 	if (held.has('interlock')) parts.push(describeInterlock(regions));
 	if (held.has('unches')) parts.push(describeUnches(unched));
+	if (held.has('cheaters')) parts.push(describeCheaters(cheaters));
 	return parts.join(' + ');
 }
