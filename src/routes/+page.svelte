@@ -29,6 +29,7 @@
 		constraintApplies,
 		describeConstraints,
 		regionColours,
+		twoLetterEntries,
 		unchedSquares,
 		whiteRegions,
 		type ConstraintKey
@@ -197,8 +198,13 @@
 	const cheaters = $derived(
 		size && flagCheaters ? cheaterSquares(size.rows, size.cols, walls) : null
 	);
+	const flagTwoLetters = $derived(chosenConstraints.includes('twoLetters'));
+	const twoLetters = $derived(
+		numbering && flagTwoLetters ? twoLetterEntries(numbering.entries) : null
+	);
+	const twoLetterSquares = $derived(new Set(twoLetters?.flatMap((e) => e.keys)));
 	const constraintsName = $derived(
-		describeConstraints(chosenConstraints, regions, unched, cheaters)
+		describeConstraints(chosenConstraints, regions, unched, cheaters, twoLetters)
 	);
 
 	function toggleConstraint(key: ConstraintKey) {
@@ -862,6 +868,9 @@
 												{:else if c.key === 'cheaters'}
 													<rect x="3" y="3" width="10" height="10" />
 													<path class="axis" d="M5.5 9.3q3 1.6 5-1.3" />
+												{:else if c.key === 'twoLetters'}
+													<rect x="2" y="5" width="12" height="6" />
+													<path class="axis" d="M8 5v6" />
 												{:else}
 													<rect x="3" y="3" width="10" height="10" />
 													<path class="axis" d="M3 8h10" />
@@ -872,7 +881,7 @@
 											</span>
 										</label>
 									{/each}
-									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (cheaters && cheaters.size > 0)}
+									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (cheaters && cheaters.size > 0) || (twoLetters && twoLetters.length > 0)}
 										<p class="menu-note" role="status">
 											{#if interlock && regions && regions.count > 1}
 												The white squares fall into {regions.count} separate regions, shaded below.
@@ -886,6 +895,11 @@
 												{cheaters.size === 1
 													? 'One black square is a cheater'
 													: `${cheaters.size} black squares are cheaters`}, smirking below.
+											{/if}
+											{#if twoLetters && twoLetters.length > 0}
+												{twoLetters.length === 1
+													? 'One entry is two letters long'
+													: `${twoLetters.length} entries are two letters long`}, hatched below.
 											{/if}
 										</p>
 									{/if}
@@ -962,6 +976,17 @@
 							aria-label="Crossword grid, {size.cols} by {size.rows}"
 							role="img"
 						>
+							<defs>
+								<pattern
+									id="two-letter-hatch"
+									width="0.2"
+									height="0.2"
+									patternUnits="userSpaceOnUse"
+									patternTransform="rotate(45)"
+								>
+									<rect width="0.08" height="0.2" />
+								</pattern>
+							</defs>
 							{#each cells as { key, row, col } (key)}
 								{@const sq = grid[key]}
 								{@const num = numbering?.numbers.get(key)}
@@ -988,6 +1013,9 @@
 								{/if}
 								{#if cheaters?.has(key)}
 									<image class="cheater" href={smirk} x={col} y={row} width="1" height="1" />
+								{/if}
+								{#if twoLetterSquares.has(key)}
+									<rect class="two-letter" x={col} y={row} width="1" height="1" />
 								{/if}
 								{#if sq.letter && !sq.black}
 									<text
@@ -1175,6 +1203,7 @@
 		--shade-2: #74c0f0;
 		--shade-3: #8fdc9b;
 		--unched: #d7263d;
+		--two-letter: #6a32d6;
 		--run: #fff1a1;
 		--caret: #f4c430;
 		--on-mat: #eef3ef;
@@ -1907,6 +1936,15 @@
 	}
 
 	image.cheater {
+		pointer-events: none;
+	}
+
+	pattern rect {
+		fill: var(--two-letter);
+	}
+	rect.two-letter {
+		fill: url(#two-letter-hatch);
+		opacity: 0.6;
 		pointer-events: none;
 	}
 

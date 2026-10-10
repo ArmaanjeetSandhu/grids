@@ -1,6 +1,6 @@
-import { keyOf, step, type Axis, type GridMode, type Walls } from './crossword';
+import { keyOf, step, type Axis, type Entry, type GridMode, type Walls } from './crossword';
 
-export type ConstraintKey = 'interlock' | 'unches' | 'cheaters';
+export type ConstraintKey = 'interlock' | 'unches' | 'cheaters' | 'twoLetters';
 
 export interface Constraint {
 	key: ConstraintKey;
@@ -19,6 +19,10 @@ export const CONSTRAINTS: readonly Constraint[] = [
 	{
 		key: 'cheaters',
 		label: 'Cheater squares'
+	},
+	{
+		key: 'twoLetters',
+		label: 'No two-letter entries'
 	}
 ];
 
@@ -235,6 +239,9 @@ export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<st
 	return cheaters;
 }
 
+export const twoLetterEntries = (entries: readonly Entry[]): Entry[] =>
+	entries.filter((e) => e.keys.length === 2);
+
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function describeInterlock(regions: Regions | null): string {
@@ -255,11 +262,18 @@ function describeCheaters(cheaters: Set<string> | null): string {
 	return count(cheaters.size, 'cheater', 'cheaters');
 }
 
+function describeTwoLetters(twoLetters: Entry[] | null): string {
+	if (twoLetters === null) return 'two-letter entries';
+	if (twoLetters.length === 0) return 'No two-letter entries';
+	return count(twoLetters.length, 'two-letter entry', 'two-letter entries');
+}
+
 export function describeConstraints(
 	chosen: Iterable<ConstraintKey>,
 	regions: Regions | null,
 	unched: Set<string> | null,
-	cheaters: Set<string> | null
+	cheaters: Set<string> | null,
+	twoLetters: Entry[] | null
 ): string {
 	const held = new Set(chosen);
 	if (held.size === 0) return 'Off';
@@ -268,5 +282,6 @@ export function describeConstraints(
 	if (held.has('interlock')) parts.push(describeInterlock(regions));
 	if (held.has('unches')) parts.push(describeUnches(unched));
 	if (held.has('cheaters')) parts.push(describeCheaters(cheaters));
+	if (held.has('twoLetters')) parts.push(describeTwoLetters(twoLetters));
 	return parts.join(' + ');
 }
