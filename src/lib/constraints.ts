@@ -289,54 +289,37 @@ export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<st
 export const twoLetterEntries = (entries: readonly Entry[]): Entry[] =>
 	entries.filter((e) => e.keys.length === 2);
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-function describeInterlock(regions: Regions | null): string {
-	if (regions === null) return 'interlock';
-	if (regions.count <= 1) return 'Connected';
-	return count(regions.count, 'region', 'regions');
+export interface ConstraintStatus {
+	key: ConstraintKey;
+	label: string;
+	value: string;
 }
 
-function describeUnches(unched: Set<string> | null): string {
-	if (unched === null) return 'no unches';
-	if (unched.size === 0) return 'No unches';
-	return count(unched.size, 'unch', 'unches');
-}
+const tally = (n: number) => (n === 0 ? 'None' : String(n));
 
-function describeConsecutiveUnches(consecutive: Set<string> | null): string {
-	if (consecutive === null) return 'no consecutive unches';
-	if (consecutive.size === 0) return 'No consecutive unches';
-	return `${consecutive.size} consecutive unches`;
-}
-
-function describeCheaters(cheaters: Set<string> | null): string {
-	if (cheaters === null) return 'cheaters';
-	if (cheaters.size === 0) return 'No cheaters';
-	return count(cheaters.size, 'cheater', 'cheaters');
-}
-
-function describeTwoLetters(twoLetters: Entry[] | null): string {
-	if (twoLetters === null) return 'two-letter entries';
-	if (twoLetters.length === 0) return 'No two-letter entries';
-	return count(twoLetters.length, 'two-letter entry', 'two-letter entries');
-}
-
-export function describeConstraints(
-	chosen: Iterable<ConstraintKey>,
+export function constraintStatus(
 	regions: Regions | null,
 	unched: Set<string> | null,
 	consecutive: Set<string> | null,
 	cheaters: Set<string> | null,
 	twoLetters: Entry[] | null
-): string {
-	const held = new Set(chosen);
-	if (held.size === 0) return 'Off';
-
-	const parts: string[] = [];
-	if (held.has('interlock')) parts.push(describeInterlock(regions));
-	if (held.has('unches')) parts.push(describeUnches(unched));
-	else if (held.has('consecutiveUnches')) parts.push(describeConsecutiveUnches(consecutive));
-	if (held.has('cheaters')) parts.push(describeCheaters(cheaters));
-	if (held.has('twoLetters')) parts.push(describeTwoLetters(twoLetters));
-	return parts.join(' + ');
+): ConstraintStatus[] {
+	const status: ConstraintStatus[] = [];
+	if (regions)
+		status.push({
+			key: 'interlock',
+			label: 'Interlock',
+			value: regions.count <= 1 ? 'Obeyed' : 'Violated'
+		});
+	if (unched) status.push({ key: 'unches', label: 'Unches', value: tally(unched.size) });
+	else if (consecutive)
+		status.push({
+			key: 'consecutiveUnches',
+			label: 'Consecutive unches',
+			value: tally(consecutive.size)
+		});
+	if (cheaters) status.push({ key: 'cheaters', label: 'Cheaters', value: tally(cheaters.size) });
+	if (twoLetters)
+		status.push({ key: 'twoLetters', label: '2-letter entries', value: tally(twoLetters.length) });
+	return status;
 }

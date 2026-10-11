@@ -28,7 +28,7 @@
 		cheaterSquares,
 		consecutiveUnches,
 		constraintApplies,
-		describeConstraints,
+		constraintStatus,
 		heldConstraints,
 		impliedBy,
 		regionColours,
@@ -88,8 +88,6 @@
 		const entries = numbering?.entries ?? [];
 		const across = entries.filter((e) => e.axis === 'across').length;
 		return {
-			total,
-			dims: `${size.rows} × ${size.cols}`,
 			white: total - black,
 			black,
 			whitePct: 100 - blackPct,
@@ -215,8 +213,9 @@
 		numbering && flagTwoLetters ? twoLetterEntries(numbering.entries) : null
 	);
 	const twoLetterSquares = $derived(new Set(twoLetters?.flatMap((e) => e.keys)));
-	const constraintsName = $derived(
-		describeConstraints(activeConstraints, regions, unched, consecutive, cheaters, twoLetters)
+	const constraintsName = $derived(chosenConstraints.length > 0 ? 'On' : 'Off');
+	const constraintStats = $derived(
+		constraintStatus(regions, unched, consecutive, cheaters, twoLetters)
 	);
 
 	function toggleConstraint(key: ConstraintKey) {
@@ -1173,13 +1172,8 @@
 
 			{#if stats}
 				<footer class="status" aria-label="Grid statistics">
-					<div class="status-group">
-						<span class="stat">
-							<span class="stat-label">Total squares</span>
-							<span class="stat-value">{stats.total}</span>
-							<span class="stat-note" title="Rows × columns">({stats.dims})</span>
-						</span>
-						{#if !bars || stats.black > 0}
+					{#if !bars || stats.black > 0}
+						<div class="status-group">
 							<span class="stat">
 								<span class="stat-label">White squares</span>
 								<span class="stat-value">{stats.white}</span>
@@ -1190,10 +1184,10 @@
 								<span class="stat-value">{stats.black}</span>
 								<span class="stat-note">({stats.blackPct}%)</span>
 							</span>
-						{/if}
-					</div>
+						</div>
 
-					<span class="status-split" aria-hidden="true"></span>
+						<span class="status-split" aria-hidden="true"></span>
+					{/if}
 
 					<div class="status-group">
 						<span class="stat">
@@ -1209,6 +1203,19 @@
 							<span class="stat-value">{stats.down}</span>
 						</span>
 					</div>
+
+					{#if constraintStats.length > 0}
+						<span class="status-split" aria-hidden="true"></span>
+
+						<div class="status-group">
+							{#each constraintStats as s (s.key)}
+								<span class="stat">
+									<span class="stat-label">{s.label}</span>
+									<span class="stat-value">{s.value}</span>
+								</span>
+							{/each}
+						</div>
+					{/if}
 				</footer>
 			{/if}
 		</div>
@@ -1830,13 +1837,14 @@
 		overflow: auto;
 	}
 	.status {
+		--status-pad: 0.5rem;
 		flex: 0 0 auto;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-wrap: wrap;
 		gap: 0.4rem 1rem;
-		padding: 0.5rem 1.25rem;
+		padding: var(--status-pad) 1.25rem;
 		border-top: 1px solid rgb(255 255 255 / 0.14);
 		background: rgb(0 0 0 / 0.2);
 		font-size: 0.78rem;
@@ -1852,7 +1860,7 @@
 	.status-split {
 		width: 1px;
 		align-self: stretch;
-		min-height: 1rem;
+		margin-block: calc(-1 * var(--status-pad));
 		background: rgb(255 255 255 / 0.22);
 	}
 	.stat {
@@ -2059,7 +2067,7 @@
 			display: none;
 		}
 		.status {
-			padding: 0.5rem 0.75rem;
+			padding: var(--status-pad) 0.75rem;
 			font-size: 0.72rem;
 		}
 		.status-split {
