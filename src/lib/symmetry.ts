@@ -1,4 +1,4 @@
-import { keyOf, step, type Axis } from './crossword';
+import { keyOf, step, type Axis, type Walls } from './crossword';
 
 export type SymmetryKey =
 	'diagonal' | 'antidiagonal' | 'vertical' | 'horizontal' | 'rot180' | 'rot90';
@@ -226,4 +226,33 @@ export function barCounterparts(
 	}
 	seen.delete(start);
 	return [...seen.values()];
+}
+
+const AXES: readonly Axis[] = ['across', 'down'];
+
+export function symmetryObeyed(
+	rows: number,
+	cols: number,
+	walls: Walls,
+	active: Iterable<SymmetryKey>
+): boolean {
+	const transforms = activeTransforms(active, rows, cols);
+	for (let r = 0; r < rows; r++)
+		for (let c = 0; c < cols; c++) {
+			const black = walls.black(keyOf(r, c));
+			for (const t of transforms) {
+				const [tr, tc] = t(r, c, rows, cols);
+				if (walls.black(keyOf(tr, tc)) !== black) return false;
+			}
+			for (const axis of AXES) {
+				const [nr, nc] = step(r, c, axis);
+				if (nr >= rows || nc >= cols) continue;
+				const on = walls.bar(r, c, axis);
+				for (const t of transforms) {
+					const twin = mapBar(t, { row: r, col: c, axis }, rows, cols);
+					if (walls.bar(twin.row, twin.col, twin.axis) !== on) return false;
+				}
+			}
+		}
+	return true;
 }

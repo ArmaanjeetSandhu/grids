@@ -44,6 +44,7 @@
 		counterparts,
 		describeSymmetry,
 		fitsGrid,
+		symmetryObeyed,
 		symmetryOptions,
 		transposeSymmetry,
 		type Bar,
@@ -165,6 +166,11 @@
 	const symmetry = $derived(size ? symmetryOptions(chosenSymmetry, size.rows, size.cols) : []);
 	const activeSymmetry = $derived(symmetry.filter((s) => s.checked).map((s) => s.key));
 	const symmetryName = $derived(describeSymmetry(activeSymmetry));
+	const symmetric = $derived(
+		size && activeSymmetry.length > 0
+			? symmetryObeyed(size.rows, size.cols, walls, activeSymmetry)
+			: null
+	);
 
 	function toggleSymmetry(option: SymmetryOption) {
 		if (!option.available || option.impliedBy) return;
@@ -1193,16 +1199,23 @@
 						<span class="stat">
 							<span class="stat-label">Total entries</span>
 							<span class="stat-value">{stats.entries}</span>
-						</span>
-						<span class="stat">
-							<span class="stat-label">Across entries</span>
-							<span class="stat-value">{stats.across}</span>
-						</span>
-						<span class="stat">
-							<span class="stat-label">Down entries</span>
-							<span class="stat-value">{stats.down}</span>
+							<span class="stat-note">
+								(Across <span class="stat-value">{stats.across}</span>, Down
+								<span class="stat-value">{stats.down}</span>)
+							</span>
 						</span>
 					</div>
+
+					{#if symmetric !== null}
+						<span class="status-split" aria-hidden="true"></span>
+
+						<div class="status-group">
+							<span class="stat">
+								<span class="stat-label">Symmetry</span>
+								<span class="stat-value">{symmetric ? 'Obeyed' : 'Violated'}</span>
+							</span>
+						</div>
+					{/if}
 
 					{#if constraintStats.length > 0}
 						<span class="status-split" aria-hidden="true"></span>
@@ -1880,12 +1893,12 @@
 		color: var(--on-mat-dim);
 	}
 	.stat-value {
+		color: var(--on-mat);
 		font-weight: 600;
 		letter-spacing: -0.01em;
 	}
 	.stat-note {
 		color: var(--on-mat-dim);
-		font-size: 0.72rem;
 	}
 
 	.sheet {
