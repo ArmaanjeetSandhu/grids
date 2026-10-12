@@ -275,12 +275,25 @@ export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<st
 	const entriesThrough = (r: number, c: number, w: Walls) =>
 		entriesAlong(r, c, 'across', rows, cols, w) + entriesAlong(r, c, 'down', rows, cols, w);
 
+	const white = (r: number, c: number, w: Walls) =>
+		r >= 0 && c >= 0 && r < rows && c < cols && !w.black(keyOf(r, c));
+	const joined = (r: number, c: number, axis: Axis, w: Walls) => {
+		const [nr, nc] = step(r, c, axis);
+		return white(r, c, w) && white(nr, nc, w) && !w.bar(r, c, axis);
+	};
+	const orphaned = (r: number, c: number, w: Walls) =>
+		!joined(r, c, 'across', w) &&
+		!joined(r, c - 1, 'across', w) &&
+		!joined(r, c, 'down', w) &&
+		!joined(r - 1, c, 'down', w);
+
 	const cheaters = new Set<string>();
 	for (let r = 0; r < rows; r++)
 		for (let c = 0; c < cols; c++) {
 			const key = keyOf(r, c);
 			if (!walls.black(key)) continue;
 			const opened: Walls = { black: (k) => k !== key && walls.black(k), bar: walls.bar };
+			if (orphaned(r, c, opened)) continue;
 			if (entriesThrough(r, c, opened) === entriesThrough(r, c, walls)) cheaters.add(key);
 		}
 	return cheaters;
