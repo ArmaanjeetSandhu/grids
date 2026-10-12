@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
 	import smirk from '$lib/assets/smirk.svg';
 	import {
@@ -38,6 +39,18 @@
 		type ConstraintKey
 	} from '$lib/constraints';
 	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
+	import {
+		DURATION,
+		bloom,
+		dropdown,
+		fade,
+		flipDuration,
+		fly,
+		pop,
+		rise,
+		slide,
+		smoothWidth
+	} from '$lib/motion';
 	import { rewriteReferences, transposeReferences } from '$lib/references';
 	import {
 		barCounterparts,
@@ -220,9 +233,18 @@
 	);
 	const twoLetterSquares = $derived(new Set(twoLetters?.flatMap((e) => e.keys)));
 	const constraintsName = $derived(chosenConstraints.length > 0 ? 'On' : 'Off');
+
 	const constraintStats = $derived(
 		constraintStatus(regions, unched, consecutive, cheaters, twoLetters)
 	);
+
+	type StatusGroup = 'squares' | 'entries' | 'symmetry' | 'constraints';
+	const statusGroups: StatusGroup[] = $derived([
+		...(!bars || (stats?.black ?? 0) > 0 ? (['squares'] as const) : []),
+		'entries',
+		...(symmetric !== null ? (['symmetry'] as const) : []),
+		...(constraintStats.length > 0 ? (['constraints'] as const) : [])
+	]);
 
 	function toggleConstraint(key: ConstraintKey) {
 		if (impliedBy(key, chosenConstraints)) return;
@@ -659,7 +681,7 @@
 <main class="mat">
 	<Halftone />
 	{#if size === null}
-		<section class="setup">
+		<section class="setup" in:fly={{ y: 16, duration: DURATION.slow }}>
 			<h1>Grids</h1>
 			<p>A crossword on a plain rectangular grid.</p>
 			<form
@@ -699,7 +721,13 @@
 					{/each}
 				</div>
 				<div class="create-row">
-					<div class="segmented" role="radiogroup" aria-label="Divided by">
+					<div
+						class="segmented"
+						class:second={modeInput === MODES[1][0]}
+						role="radiogroup"
+						aria-label="Divided by"
+					>
+						<span class="segment-thumb" aria-hidden="true"></span>
 						{#each MODES as [value, label] (value)}
 							<label class="segment" class:on={modeInput === value}>
 								<input type="radio" name="mode" {value} bind:group={modeInput} />
@@ -723,12 +751,12 @@
 				</button>
 				<input bind:this={importInput} type="file" accept=".ipuz" hidden onchange={importFile} />
 				{#if importError}
-					<p class="import-error" role="alert">{importError}</p>
+					<p class="import-error" role="alert" transition:slide>{importError}</p>
 				{/if}
 			</form>
 		</section>
 	{:else}
-		<div class="main">
+		<div class="main" in:fade={{ duration: DURATION.slow }}>
 			<header class="bar">
 				<div class="row">
 					<div class="tools">
@@ -755,12 +783,15 @@
 							onclick={toggleDirection}
 							title="Switch typing direction (Enter while typing)"
 						>
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-								{#if axis === 'across'}
-									<path d="M2 8h11M9.5 4.5 13 8l-3.5 3.5" />
-								{:else}
-									<path d="M8 2v11M4.5 9.5 8 13l3.5-3.5" />
-								{/if}
+							<svg
+								class="direction"
+								class:down={axis === 'down'}
+								viewBox="0 0 16 16"
+								width="16"
+								height="16"
+								aria-hidden="true"
+							>
+								<path d="M2 8h11M9.5 4.5 13 8l-3.5 3.5" />
 							</svg>
 							{axis === 'across' ? 'Across' : 'Down'}
 							<kbd>⏎</kbd>
@@ -786,11 +817,21 @@
 									<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3" />
 								</svg>
 								Symmetry
-								<span class="symmetry-name">{symmetryName}</span>
+								<span class="symmetry-name swap sized" {@attach smoothWidth}>
+									{#key symmetryName}
+										<span in:rise>{symmetryName}</span>
+									{/key}
+								</span>
 							</button>
 
 							{#if symmetryOpen}
-								<div class="symmetry-menu" role="group" aria-label="Symmetry">
+								<div
+									class="symmetry-menu"
+									role="group"
+									aria-label="Symmetry"
+									in:dropdown
+									out:dropdown={{ duration: 160 }}
+								>
 									<p>
 										{bars
 											? 'Bars you add or remove are mirrored as you go.'
@@ -838,7 +879,11 @@
 											</svg>
 											<span class="option-text">
 												<span class="option-label">{s.label}</span>
-												{#if hint}<span class="option-hint">{hint}</span>{/if}
+												{#if hint}
+													<span class="option-hint" transition:slide={{ duration: DURATION.quick }}>
+														{hint}
+													</span>
+												{/if}
 											</span>
 										</label>
 									{/each}
@@ -871,11 +916,21 @@
 									<path d="M2.5 8h11M8 2.5v11" />
 								</svg>
 								Constraints
-								<span class="menu-name">{constraintsName}</span>
+								<span class="menu-name swap sized" {@attach smoothWidth}>
+									{#key constraintsName}
+										<span in:rise>{constraintsName}</span>
+									{/key}
+								</span>
 							</button>
 
 							{#if constraintsOpen}
-								<div class="menu-panel" role="group" aria-label="Constraints">
+								<div
+									class="menu-panel"
+									role="group"
+									aria-label="Constraints"
+									in:dropdown
+									out:dropdown={{ duration: 160 }}
+								>
 									<p>
 										Constraints only flag what they find. Nothing in the grid is changed for you.
 									</p>
@@ -916,13 +971,15 @@
 											<span class="option-text">
 												<span class="option-label">{c.label}</span>
 												{#if implier}
-													<span class="option-hint">Implied by {implier.label.toLowerCase()}</span>
+													<span class="option-hint" transition:slide={{ duration: DURATION.quick }}>
+														Implied by {implier.label.toLowerCase()}
+													</span>
 												{/if}
 											</span>
 										</label>
 									{/each}
 									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (consecutive && consecutive.size > 0) || (cheaters && cheaters.size > 0) || (twoLetters && twoLetters.length > 0)}
-										<p class="menu-note" role="status">
+										<p class="menu-note" role="status" transition:slide>
 											{#if interlock && regions && regions.count > 1}
 												The white squares fall into {regions.count} separate regions, shaded below.
 											{/if}
@@ -1055,21 +1112,39 @@
 									<rect class="unched" data-key={key} x={col} y={row} width="1" height="1" />
 								{/if}
 								{#if cheaters?.has(key)}
-									<image class="cheater" href={smirk} x={col} y={row} width="1" height="1" />
+									<image
+										class="cheater"
+										href={smirk}
+										x={col}
+										y={row}
+										width="1"
+										height="1"
+										transition:pop={{ from: 0.3 }}
+									/>
 								{/if}
 								{#if twoLetterSquares.has(key)}
-									<rect class="two-letter" x={col} y={row} width="1" height="1" />
+									<rect
+										class="two-letter"
+										x={col}
+										y={row}
+										width="1"
+										height="1"
+										transition:fade={{ duration: DURATION.quick }}
+									/>
 								{/if}
 								{#if sq.letter && !sq.black}
-									<text
-										x={col + 0.5}
-										y={row + (num ? 0.6 : 0.54)}
-										style:font-size={sq.letter.length > 2 ? `${1.3 / sq.letter.length}px` : null}
-										>{sq.letter}</text
-									>
+									{#key sq.letter}
+										<text
+											class="letter"
+											x={col + 0.5}
+											y={row + (num ? 0.6 : 0.54)}
+											style:font-size={sq.letter.length > 2 ? `${1.3 / sq.letter.length}px` : null}
+											in:pop|global>{sq.letter}</text
+										>
+									{/key}
 								{/if}
 								{#if num}
-									<text class="num" x={col + 0.06} y={row + 0.05}>{num}</text>
+									<text class="num" x={col + 0.06} y={row + 0.05} in:fade>{num}</text>
 								{/if}
 							{/each}
 
@@ -1093,7 +1168,11 @@
 							{/each}
 
 							{#if caretPos}
-								<polygon class="arrow" points={arrowPoints(axis, caretPos.col, caretPos.row)} />
+								<polygon
+									class="arrow"
+									points={arrowPoints(axis, caretPos.col, caretPos.row)}
+									in:fade={{ duration: DURATION.quick }}
+								/>
 							{/if}
 						</svg>
 
@@ -1146,7 +1225,11 @@
 								{:else}
 									<ol>
 										{#each clueLists[ax] as c (c.id)}
-											<li class:active={activeClue === c.id}>
+											<li
+												class:active={activeClue === c.id}
+												animate:flip={{ duration: flipDuration() }}
+												in:fade
+											>
 												<label for="clue-{c.id}" class="clue-num">{c.number}</label>
 												<textarea
 													id="clue-{c.id}"
@@ -1178,57 +1261,56 @@
 
 			{#if stats}
 				<footer class="status" aria-label="Grid statistics">
-					{#if !bars || stats.black > 0}
-						<div class="status-group">
-							<span class="stat">
-								<span class="stat-label">White squares</span>
-								<span class="stat-value">{stats.white}</span>
-								<span class="stat-note">({stats.whitePct}%)</span>
-							</span>
-							<span class="stat">
-								<span class="stat-label">Black squares</span>
-								<span class="stat-value">{stats.black}</span>
-								<span class="stat-note">({stats.blackPct}%)</span>
-							</span>
+					{#each statusGroups as group, i (group)}
+						<div class="status-cell" animate:flip={{ duration: flipDuration() }} transition:bloom>
+							{#if i > 0}
+								<span class="status-split" aria-hidden="true"></span>
+							{/if}
+							<div class="status-group">
+								{#if group === 'squares'}
+									<span class="stat">
+										<span class="stat-label">White squares</span>
+										<span class="stat-value">{stats.white}</span>
+										<span class="stat-note">({stats.whitePct}%)</span>
+									</span>
+									<span class="stat">
+										<span class="stat-label">Black squares</span>
+										<span class="stat-value">{stats.black}</span>
+										<span class="stat-note">({stats.blackPct}%)</span>
+									</span>
+								{:else if group === 'entries'}
+									<span class="stat">
+										<span class="stat-label">Total entries</span>
+										<span class="stat-value">{stats.entries}</span>
+										<span class="stat-note">
+											(Across <span class="stat-value">{stats.across}</span>, Down
+											<span class="stat-value">{stats.down}</span>)
+										</span>
+									</span>
+								{:else if group === 'symmetry'}
+									<span class="stat">
+										<span class="stat-label">Symmetry</span>
+										<span class="stat-value swap">
+											{#key symmetric}
+												<span in:rise>{symmetric ? 'Obeyed' : 'Violated'}</span>
+											{/key}
+										</span>
+									</span>
+								{:else}
+									{#each constraintStats as s (s.key)}
+										<span class="stat" animate:flip={{ duration: flipDuration() }} transition:bloom>
+											<span class="stat-label">{s.label}</span>
+											<span class="stat-value swap">
+												{#key s.value}
+													<span in:rise>{s.value}</span>
+												{/key}
+											</span>
+										</span>
+									{/each}
+								{/if}
+							</div>
 						</div>
-
-						<span class="status-split" aria-hidden="true"></span>
-					{/if}
-
-					<div class="status-group">
-						<span class="stat">
-							<span class="stat-label">Total entries</span>
-							<span class="stat-value">{stats.entries}</span>
-							<span class="stat-note">
-								(Across <span class="stat-value">{stats.across}</span>, Down
-								<span class="stat-value">{stats.down}</span>)
-							</span>
-						</span>
-					</div>
-
-					{#if symmetric !== null}
-						<span class="status-split" aria-hidden="true"></span>
-
-						<div class="status-group">
-							<span class="stat">
-								<span class="stat-label">Symmetry</span>
-								<span class="stat-value">{symmetric ? 'Obeyed' : 'Violated'}</span>
-							</span>
-						</div>
-					{/if}
-
-					{#if constraintStats.length > 0}
-						<span class="status-split" aria-hidden="true"></span>
-
-						<div class="status-group">
-							{#each constraintStats as s (s.key)}
-								<span class="stat">
-									<span class="stat-label">{s.label}</span>
-									<span class="stat-value">{s.value}</span>
-								</span>
-							{/each}
-						</div>
-					{/if}
+					{/each}
 				</footer>
 			{/if}
 		</div>
@@ -1295,6 +1377,38 @@
 		color: inherit;
 		cursor: pointer;
 	}
+
+	.mat {
+		--ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+		--ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+		--t-quick: 120ms;
+		--t-base: 180ms;
+	}
+	.step,
+	.primary,
+	.secondary,
+	.segment,
+	.pen,
+	.chip,
+	.option,
+	.symmetry-off,
+	.menu-off {
+		transition:
+			background-color var(--t-quick) var(--ease-out),
+			color var(--t-quick) var(--ease-out),
+			border-color var(--t-quick) var(--ease-out),
+			opacity var(--t-quick) var(--ease-out),
+			transform var(--t-quick) var(--ease-out);
+	}
+	.step:active:not(:disabled),
+	.primary:active:not(:disabled),
+	.secondary:active,
+	.pen:active,
+	.chip:active,
+	.symmetry-off:active:not(:disabled),
+	.menu-off:active:not(:disabled) {
+		transform: scale(0.97);
+	}
 	button:focus-visible,
 	input:focus-visible {
 		outline: 2px solid var(--rule);
@@ -1334,8 +1448,23 @@
 		gap: var(--pair-gap);
 	}
 	.segmented {
+		position: relative;
+		isolation: isolate;
 		display: flex;
 		min-width: 0;
+		background: var(--paper);
+	}
+	.segment-thumb {
+		position: absolute;
+		inset-block: 0;
+		left: 0;
+		width: calc(50% + 1px);
+		background: var(--ink);
+		pointer-events: none;
+		transition: translate 320ms var(--ease-out);
+	}
+	.segmented.second .segment-thumb {
+		translate: calc(100% - 2px) 0;
 	}
 	.setup .segment {
 		position: relative;
@@ -1349,18 +1478,27 @@
 		font-weight: 600;
 		font-size: 0.8rem;
 		color: var(--ink);
-		background: var(--paper);
+		background: transparent;
 		border: 2px solid var(--ink);
 		cursor: pointer;
+		z-index: 1;
+	}
+	.setup .segment {
+		transition:
+			background-color var(--t-quick) var(--ease-out),
+			color 160ms var(--ease-out) 50ms,
+			transform var(--t-quick) var(--ease-out);
 	}
 	.segment + .segment {
 		margin-left: -2px;
 	}
-	.segment:hover {
+	.segment:not(.on):hover {
 		background: #f1f1ee;
 	}
+	.segment:active {
+		transform: scale(0.97);
+	}
 	.segment.on {
-		background: var(--ink);
 		color: var(--paper);
 	}
 	.segment input {
@@ -1516,6 +1654,12 @@
 	.chip:hover {
 		background: rgb(0 0 0 / 0.32);
 	}
+	.chip svg.direction {
+		transition: rotate var(--t-base) var(--ease-spring);
+	}
+	.chip svg.direction.down {
+		rotate: 90deg;
+	}
 	.chip svg {
 		fill: none;
 		stroke: currentColor;
@@ -1535,6 +1679,17 @@
 	.symmetry-name,
 	.menu-name {
 		color: var(--on-mat-dim);
+		transition: color var(--t-base) var(--ease-out);
+	}
+	.swap > span {
+		display: inline-block;
+	}
+	.swap.sized {
+		display: inline-block;
+		white-space: nowrap;
+		overflow-x: clip;
+		overflow-y: visible;
+		transition: width 280ms var(--ease-out);
 	}
 	.chip.on .symmetry-name,
 	.chip.on .menu-name {
@@ -1554,6 +1709,44 @@
 		border: 1px solid rgb(255 255 255 / 0.28);
 		border-radius: 4px;
 		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+	}
+	.symmetry-menu,
+	.menu-panel {
+		transform-origin: top right;
+	}
+	.symmetry-menu > *,
+	.menu-panel > * {
+		animation: menu-item 360ms var(--ease-out) both;
+	}
+	.symmetry-menu > :nth-child(2),
+	.menu-panel > :nth-child(2) {
+		animation-delay: 25ms;
+	}
+	.symmetry-menu > :nth-child(3),
+	.menu-panel > :nth-child(3) {
+		animation-delay: 45ms;
+	}
+	.symmetry-menu > :nth-child(4),
+	.menu-panel > :nth-child(4) {
+		animation-delay: 65ms;
+	}
+	.symmetry-menu > :nth-child(5),
+	.menu-panel > :nth-child(5) {
+		animation-delay: 85ms;
+	}
+	.symmetry-menu > :nth-child(6),
+	.menu-panel > :nth-child(6) {
+		animation-delay: 105ms;
+	}
+	.symmetry-menu > :nth-child(n + 7),
+	.menu-panel > :nth-child(n + 7) {
+		animation-delay: 125ms;
+	}
+	@keyframes menu-item {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
 	}
 	.symmetry-menu p,
 	.menu-panel p {
@@ -1593,6 +1786,9 @@
 		border-radius: 2px;
 		background: transparent;
 		cursor: inherit;
+		transition:
+			background-color var(--t-quick) var(--ease-out),
+			border-color var(--t-quick) var(--ease-out);
 	}
 	.option input::before {
 		content: '';
@@ -1601,6 +1797,7 @@
 		background: var(--ink);
 		clip-path: polygon(13% 52%, 0 66%, 38% 100%, 100% 22%, 86% 9%, 37% 70%);
 		scale: 0;
+		transition: scale var(--t-base) var(--ease-spring);
 	}
 	.option input:checked {
 		background: var(--rule);
@@ -1726,7 +1923,7 @@
 		grid-template-columns: 1fr 1fr;
 		align-content: start;
 		gap: 1rem;
-		padding: 0.75rem 1rem 1rem;
+		padding: 0 1rem 1rem;
 		overflow-y: auto;
 		scrollbar-width: none;
 		background: rgb(0 0 0 / 0.2);
@@ -1740,6 +1937,7 @@
 	}
 	.title-field {
 		grid-column: 1 / -1;
+		padding-top: 0.75rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
@@ -1756,6 +1954,7 @@
 		border-bottom: 1px dashed rgb(255 255 255 / 0.3);
 		border-radius: 0;
 		padding: 0.2rem 0;
+		transition: border-color var(--t-quick) var(--ease-out);
 	}
 	.title-field input::placeholder {
 		color: var(--on-mat-dim);
@@ -1769,8 +1968,12 @@
 		border-bottom: 1px solid var(--rule);
 	}
 	.clues h2 {
-		margin: 0 0 0.5rem;
-		padding-bottom: 0.35rem;
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		margin: -1rem 0 0.5rem;
+		padding: 1rem 0 0.35rem;
+		background: color-mix(in srgb, var(--mat) 80%, #000);
 		border-bottom: 1px solid rgb(255 255 255 / 0.18);
 		font-size: 0.75rem;
 		font-weight: 600;
@@ -1793,6 +1996,9 @@
 		padding: 0.25rem 0.3rem;
 		border-radius: 4px;
 		border: 1px solid transparent;
+		transition:
+			background-color var(--t-base) var(--ease-out),
+			border-color var(--t-base) var(--ease-out);
 	}
 	.clues li.active {
 		background: rgb(0 0 0 / 0.22);
@@ -1821,6 +2027,7 @@
 		border-radius: 0;
 		padding: 0.1rem 0;
 		overflow: hidden;
+		transition: border-color var(--t-quick) var(--ease-out);
 	}
 	.clues textarea:hover {
 		border-bottom-color: rgb(255 255 255 / 0.6);
@@ -1863,12 +2070,19 @@
 		font-size: 0.78rem;
 		font-variant-numeric: tabular-nums;
 		line-height: 1.4;
+		position: relative;
+	}
+	.status-cell {
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
 	}
 	.status-group {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 0.3rem 0.55rem;
+		gap: 0.3rem 1.1rem;
 	}
 	.status-split {
 		width: 1px;
@@ -1877,6 +2091,7 @@
 		background: rgb(255 255 255 / 0.22);
 	}
 	.stat {
+		position: relative;
 		display: inline-flex;
 		align-items: baseline;
 		gap: 0.3rem;
@@ -1884,9 +2099,10 @@
 	}
 	.stat + .stat::before {
 		content: '';
+		position: absolute;
+		inset-block: 0;
+		left: -0.55rem;
 		width: 1px;
-		align-self: stretch;
-		margin-right: 0.25rem;
 		background: rgb(255 255 255 / 0.16);
 	}
 	.stat-label {
@@ -1929,6 +2145,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition:
+			color var(--t-quick) var(--ease-out),
+			font-size var(--t-quick) var(--ease-out);
 	}
 	.ruler.cols {
 		left: 0;
@@ -1953,6 +2172,7 @@
 
 	.sq {
 		fill: var(--paper);
+		transition: fill var(--t-quick) var(--ease-out);
 	}
 	.sq.black {
 		fill: #000;
@@ -1996,6 +2216,8 @@
 
 	image.cheater {
 		pointer-events: none;
+		transform-box: fill-box;
+		transform-origin: center;
 	}
 
 	pattern rect {
@@ -2016,6 +2238,10 @@
 		dominant-baseline: central;
 		pointer-events: none;
 	}
+	text.letter {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
 	text.num {
 		font-size: 0.27px;
 		font-weight: 500;
@@ -2034,11 +2260,12 @@
 	}
 
 	.grab {
-		fill: transparent;
+		fill: var(--caret);
+		fill-opacity: 0;
 		cursor: pointer;
+		transition: fill-opacity var(--t-quick) var(--ease-out);
 	}
 	.grab:hover {
-		fill: var(--caret);
 		fill-opacity: 0.5;
 	}
 
@@ -2074,6 +2301,7 @@
 			left: 0.75rem;
 			right: 0.75rem;
 			width: auto;
+			transform-origin: top center;
 		}
 		.pen-label,
 		kbd {
@@ -2089,8 +2317,14 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.swatch {
-			transition: none;
+		.mat,
+		.mat :global(*),
+		.mat :global(*::before) {
+			transition-duration: 0s !important;
+		}
+		.symmetry-menu > *,
+		.menu-panel > * {
+			animation: none;
 		}
 	}
 </style>
