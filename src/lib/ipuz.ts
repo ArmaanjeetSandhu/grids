@@ -27,6 +27,7 @@ const VERSION = 'http://ipuz.org/v2';
 const KIND = 'http://ipuz.org/crossword#1';
 const BLOCK = '#';
 const EMPTY = 0;
+const CIRCLE = 'circle';
 
 const MANAGED = new Set([
 	'version',
@@ -78,9 +79,15 @@ export function toIpuz(p: Puzzle) {
 	const puzzle = Array.from({ length: p.rows }, (_, r) =>
 		Array.from({ length: p.cols }, (_, c) => {
 			const key = keyOf(r, c);
-			const cell = isBlack(key) ? BLOCK : label(key);
+			const black = isBlack(key);
+			const cell = black ? BLOCK : label(key);
 			const barred = barsAt(p.grid, p.rows, p.cols, r, c);
-			return barred ? { cell, style: { barred } } : cell;
+			const circled = !black && p.grid[key].circled;
+			if (!barred && !circled) return cell;
+			return {
+				cell,
+				style: { ...(circled && { shapebg: CIRCLE }), ...(barred && { barred }) }
+			};
 		})
 	);
 	const cluesFor = (axis: Axis) =>
@@ -134,11 +141,18 @@ export function fromIpuz(data: unknown): Puzzle {
 	const empty = scalar(data.empty) ?? String(EMPTY);
 	const solution = Array.isArray(data.solution) ? data.solution : [];
 	const named = isRecord(data.styles) ? data.styles : {};
-	const sides = (r: number, c: number): string => {
+	const styleOf = (r: number, c: number): Record<string, unknown> => {
 		const style = isRecord(source[r]?.[c]) ? (source[r][c] as Record<string, unknown>).style : null;
 		const spec = typeof style === 'string' ? named[style] : style;
-		const barred = isRecord(spec) ? spec.barred : undefined;
+		return isRecord(spec) ? spec : {};
+	};
+	const sides = (r: number, c: number): string => {
+		const barred = styleOf(r, c).barred;
 		return typeof barred === 'string' ? barred.toUpperCase() : '';
+	};
+	const circledAt = (r: number, c: number) => {
+		const shape = styleOf(r, c).shapebg;
+		return typeof shape === 'string' && shape.trim().toLowerCase() === CIRCLE;
 	};
 	const grid: Grid = {};
 	const labelled = new Map<string, string>();
@@ -158,7 +172,8 @@ export function fromIpuz(data: unknown): Puzzle {
 				black,
 				letter: letter.toLocaleUpperCase(),
 				barRight: c + 1 < cols && (here.includes('R') || sides(r, c + 1).includes('L')),
-				barBottom: r + 1 < rows && (here.includes('B') || sides(r + 1, c).includes('T'))
+				barBottom: r + 1 < rows && (here.includes('B') || sides(r + 1, c).includes('T')),
+				circled: !black && circledAt(r, c)
 			};
 			if (black || label === undefined) continue;
 			if (label !== empty && !labelled.has(label)) labelled.set(label, key);

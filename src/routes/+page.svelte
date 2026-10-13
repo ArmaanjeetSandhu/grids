@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
 	import smirk from '$lib/assets/smirk.svg';
@@ -464,7 +464,9 @@
 
 	function newGrid() {
 		const used =
-			Object.values(grid).some((s) => s.black || s.letter || s.barRight || s.barBottom) ||
+			Object.values(grid).some(
+				(s) => s.black || s.letter || s.barRight || s.barBottom || s.circled
+			) ||
 			Object.keys(clues).length > 0 ||
 			title.trim() !== '';
 		if (used && !confirm('Start a new grid? This clears the current puzzle.')) return;
@@ -507,7 +509,10 @@
 		const { row, col } = parseKey(key);
 		for (const k of [key, ...counterparts(row, col, size.rows, size.cols, activeSymmetry)]) {
 			grid[k].black = black;
-			if (black) grid[k].letter = '';
+			if (black) {
+				grid[k].letter = '';
+				grid[k].circled = false;
+			}
 		}
 		editing = null;
 		selection = [];
@@ -616,6 +621,14 @@
 		if (editing.idx < editing.keys.length - 1) editing.idx++;
 	}
 
+	function toggleCircles() {
+		if (!editing) return;
+		const keys = (multi ? selection : [editing.keys[editing.idx]]).filter((k) => !grid[k].black);
+		if (keys.length === 0) return;
+		const circled = !keys.every((k) => grid[k].circled);
+		for (const k of keys) grid[k].circled = circled;
+	}
+
 	function clearSelected() {
 		for (const k of selection) grid[k].letter = '';
 	}
@@ -633,7 +646,10 @@
 
 	function onInputKey(e: KeyboardEvent) {
 		if (!editing) return;
-		if (e.key === 'Enter') {
+		if (e.code === 'KeyC' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			e.preventDefault();
+			toggleCircles();
+		} else if (e.key === 'Enter') {
 			e.preventDefault();
 			toggleDirection();
 		} else if (e.key === 'Escape') {
@@ -702,6 +718,44 @@
 	};
 	const arrowPoints = (dir: Axis, x: number, y: number) =>
 		ARROWS[dir].map(([a, b]) => `${x + a},${y + b}`).join(' ');
+
+	const NUM = { x: 0.06, y: 0.05, size: 0.27 };
+	const NUM_INK = 0.74;
+	const NUM_CLEARANCE = 0.035;
+
+	let numWidths = $state<Record<string, number>>({});
+	const numWidth = (label: string) => numWidths[label] ?? label.length * NUM.size * 0.56;
+
+	function measureNum(label: string) {
+		return (node: SVGTextElement) => {
+			const update = () => {
+				const width = node.getBBox().width;
+				if (width > 0 && Math.abs(untrack(() => numWidths[label] ?? 0) - width) > 1e-4)
+					numWidths[label] = width;
+			};
+			update();
+			document.fonts?.addEventListener('loadingdone', update);
+			return () => document.fonts?.removeEventListener('loadingdone', update);
+		};
+	}
+
+	const ringWidth = $derived(Math.max(1, cell * 0.035) / cell);
+
+	function ringPath(col: number, row: number, label: string | null): string {
+		const r = 0.5 - ringWidth / 2;
+		const cx = col + 0.5;
+		const cy = row + 0.5;
+		const at = (t: number) => `${cx + r * Math.cos(t)} ${cy + r * Math.sin(t)}`;
+		const full = `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
+		if (!label) return full;
+		const right = NUM.x + numWidth(label) + NUM_CLEARANCE + ringWidth / 2 - 0.5;
+		const bottom = NUM.y + NUM.size * NUM_INK + NUM_CLEARANCE + ringWidth / 2 - 0.5;
+		if (right * right + bottom * bottom >= r * r) return full;
+		const from = Math.min(2 * Math.PI - Math.acos(right / r), 2 * Math.PI + Math.asin(bottom / r));
+		const to = 3 * Math.PI - Math.asin(bottom / r);
+		const large = to - from > Math.PI ? 1 : 0;
+		return `M${at(from)}A${r} ${r} 0 ${large} 1 ${at(to)}`;
+	}
 </script>
 
 <svelte:head>
@@ -1171,6 +1225,14 @@
 										transition:fade={{ duration: DURATION.quick }}
 									/>
 								{/if}
+								{#if sq.circled && !sq.black}
+									<path
+										class="ring"
+										d={ringPath(col, row, num ? String(num) : null)}
+										stroke-width={ringWidth}
+										transition:fade={{ duration: DURATION.quick }}
+									/>
+								{/if}
 								{#if sq.letter && !sq.black}
 									{#key sq.letter}
 										<text
@@ -1183,7 +1245,14 @@
 									{/key}
 								{/if}
 								{#if num}
-									<text class="num" x={col + 0.06} y={row + 0.05} in:fade>{num}</text>
+									<text
+										class="num"
+										x={col + NUM.x}
+										y={row + NUM.y}
+										style:font-size="{NUM.size}px"
+										{@attach sq.circled && !sq.black ? measureNum(String(num)) : null}
+										in:fade>{num}</text
+									>
 								{/if}
 							{/each}
 
@@ -2282,10 +2351,16 @@
 		transform-origin: center;
 	}
 	text.num {
-		font-size: 0.27px;
 		font-weight: 500;
 		text-anchor: start;
 		dominant-baseline: hanging;
+	}
+
+	path.ring {
+		fill: none;
+		stroke: var(--ink);
+		stroke-linecap: round;
+		pointer-events: none;
 	}
 
 	path.lines {

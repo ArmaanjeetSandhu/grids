@@ -7,6 +7,7 @@ export interface Square {
 	letter: string;
 	barRight: boolean;
 	barBottom: boolean;
+	circled: boolean;
 }
 
 export type Grid = Record<string, Square>;
@@ -39,7 +40,8 @@ export const emptySquare = (): Square => ({
 	black: false,
 	letter: '',
 	barRight: false,
-	barBottom: false
+	barBottom: false,
+	circled: false
 });
 
 export function transposeGrid(grid: Grid, rows: number, cols: number): Grid {
@@ -51,7 +53,8 @@ export function transposeGrid(grid: Grid, rows: number, cols: number): Grid {
 				black: square.black,
 				letter: square.letter,
 				barRight: square.barBottom,
-				barBottom: square.barRight
+				barBottom: square.barRight,
+				circled: square.circled
 			};
 		}
 	return flipped;
