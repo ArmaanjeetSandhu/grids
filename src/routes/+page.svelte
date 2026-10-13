@@ -427,6 +427,99 @@
 		modeInput = p.mode;
 		mode = p.mode;
 		size = { rows: p.rows, cols: p.cols };
+		resetHistory();
+	}
+
+	type Snapshot = {
+		rows: number;
+		cols: number;
+		grid: Grid;
+		clues: Record<string, string>;
+		title: string;
+	};
+
+	const HISTORY_LIMIT = 500;
+	const past: string[] = [];
+	const future: string[] = [];
+	let present = '';
+
+	function serialize() {
+		if (!size) return '';
+		const snapshot: Snapshot = { ...size, grid, clues, title };
+		return JSON.stringify(snapshot);
+	}
+
+	function resetHistory() {
+		past.length = 0;
+		future.length = 0;
+		present = serialize();
+	}
+
+	function commit() {
+		const next = serialize();
+		if (!next || next === present) return;
+		past.push(present);
+		if (past.length > HISTORY_LIMIT) past.shift();
+		future.length = 0;
+		present = next;
+	}
+
+	function travel(from: string[], to: string[], forward: boolean) {
+		commit();
+		const target = from.pop();
+		if (target === undefined) return;
+		to.push(present);
+		restore(target, forward);
+	}
+
+	const undo = () => travel(past, future, false);
+	const redo = () => travel(future, past, true);
+
+	function restore(serialized: string, forward: boolean) {
+		const prev: Snapshot = JSON.parse(present);
+		const next: Snapshot = JSON.parse(serialized);
+		grid = next.grid;
+		clues = next.clues;
+		title = next.title;
+		present = serialized;
+		hoverKey = null;
+		settleCaret(prev.grid, forward);
+	}
+
+	function settleCaret(prev: Grid, forward: boolean) {
+		if (!editing || !size) return;
+		const { rows, cols } = size;
+		const open = (k: string | undefined): k is string => !!k && !!grid[k] && !grid[k].black;
+		const { keys } = editing;
+		const changed = allKeys(rows, cols).find(
+			(k) => open(k) && (grid[k].letter !== prev[k]?.letter || grid[k].circled !== prev[k]?.circled)
+		);
+		const target = changed ?? keys[editing.idx];
+		selection = [];
+		if (!open(target)) {
+			editing = null;
+			input?.blur();
+			return;
+		}
+		const ws = wallsOf(grid);
+		const run = runFrom(keys[0], axis, ws, rows, cols);
+		const intact =
+			keys.every(open) && run.length === keys.length && run.every((k, i) => k === keys[i]);
+		const next =
+			intact && keys.includes(target)
+				? { keys, idx: keys.indexOf(target) }
+				: { keys: runFrom(target, axis, ws, rows, cols), idx: 0 };
+		if (forward && target === changed && grid[target].letter)
+			next.idx = Math.min(next.idx + 1, next.keys.length - 1);
+		editing = next;
+	}
+
+	function historyAction(e: KeyboardEvent): 'undo' | 'redo' | null {
+		if (e.altKey || (isMac ? e.ctrlKey || !e.metaKey : e.metaKey || !e.ctrlKey)) return null;
+		const k = e.key.toLowerCase();
+		if (k === 'z') return e.shiftKey ? (isMac ? 'redo' : null) : 'undo';
+		if (k === 'y' && !e.shiftKey && !isMac) return 'redo';
+		return null;
 	}
 
 	function start() {
@@ -475,21 +568,42 @@
 		size = null;
 	}
 
+	function transposePuzzle<
+		T extends { rows: number; cols: number; grid: Grid; clues: Record<string, string> }
+	>(p: T): T {
+		const flipped = transposeGrid(p.grid, p.rows, p.cols);
+		const moved = transposeReferences(
+			numberEntries(p.rows, p.cols, wallsOf(p.grid)),
+			numberEntries(p.cols, p.rows, wallsOf(flipped))
+		);
+		return {
+			...p,
+			rows: p.cols,
+			cols: p.rows,
+			grid: flipped,
+			clues: Object.fromEntries(
+				Object.entries(p.clues).map(([id, text]) => [
+					transposeEntryId(id),
+					rewriteReferences(text, moved)
+				])
+			)
+		};
+	}
+
+	function transposeHistory() {
+		for (const stack of [past, future])
+			for (let i = 0; i < stack.length; i++)
+				stack[i] = JSON.stringify(transposePuzzle(JSON.parse(stack[i]) as Snapshot));
+		present = serialize();
+	}
+
 	function transpose() {
 		if (!size) return;
+		commit();
 		const { rows, cols } = size;
-		const flipped = transposeGrid(grid, rows, cols);
-		const moved = transposeReferences(
-			numberEntries(rows, cols, wallsOf(grid)),
-			numberEntries(cols, rows, wallsOf(flipped))
-		);
-		grid = flipped;
-		clues = Object.fromEntries(
-			Object.entries(clues).map(([id, text]) => [
-				transposeEntryId(id),
-				rewriteReferences(text, moved)
-			])
-		);
+		const flipped = transposePuzzle({ rows, cols, grid, clues });
+		grid = flipped.grid;
+		clues = flipped.clues;
 		if (activeClue) activeClue = transposeEntryId(activeClue);
 		if (editing) editing = { keys: editing.keys.map(transposeKey), idx: editing.idx };
 		selection = selection.map(transposeKey);
@@ -500,6 +614,7 @@
 		constraintsOpen = false;
 		sizeInput = { rows: cols, cols: rows };
 		size = { rows: cols, cols: rows };
+		transposeHistory();
 	}
 
 	function paint(key: string) {
@@ -674,12 +789,20 @@
 			e.preventDefault();
 			typeLetter(e.key);
 		}
+		commit();
 	}
 
 	function onInput(e: Event) {
 		const el = e.currentTarget as HTMLInputElement;
 		for (const ch of el.value) if (/\p{L}/u.test(ch)) typeLetter(ch);
 		el.value = '';
+		commit();
+	}
+
+	function onWindowPointerUp() {
+		if (painting) commit();
+		painting = false;
+		barStroke = null;
 	}
 
 	function onWindowPointerDown(e: PointerEvent) {
@@ -688,6 +811,15 @@
 	}
 
 	function onWindowKey(e: KeyboardEvent) {
+		const action = size && historyAction(e);
+		if (action) {
+			const t = e.target as HTMLElement | null;
+			if ((t instanceof HTMLInputElement && t !== input) || t instanceof HTMLTextAreaElement)
+				return;
+			e.preventDefault();
+			if (!painting) (action === 'undo' ? undo : redo)();
+			return;
+		}
 		if (e.key === 'Escape' && (symmetryOpen || constraintsOpen)) {
 			symmetryOpen = false;
 			constraintsOpen = false;
@@ -766,10 +898,7 @@
 	bind:innerWidth={winW}
 	onkeydown={onWindowKey}
 	onpointerdown={onWindowPointerDown}
-	onpointerup={() => {
-		painting = false;
-		barStroke = null;
-	}}
+	onpointerup={onWindowPointerUp}
 />
 
 <main class="mat">
@@ -1238,7 +1367,7 @@
 										<text
 											class="letter"
 											x={col + 0.5}
-											y={row + (num ? 0.6 : 0.54)}
+											y={row + 0.6}
 											style:font-size={sq.letter.length > 2 ? `${1.3 / sq.letter.length}px` : null}
 											in:pop|global>{sq.letter}</text
 										>
@@ -1317,6 +1446,7 @@
 								autocomplete="off"
 								spellcheck="true"
 								bind:value={title}
+								onblur={commit}
 								onkeydown={(e) => {
 									if (e.key === 'Enter' || e.key === 'Escape') {
 										e.preventDefault();
@@ -1349,6 +1479,7 @@
 													onfocus={() => (activeClue = c.id)}
 													onblur={() => {
 														if (activeClue === c.id) activeClue = null;
+														commit();
 													}}
 													onkeydown={(e) => {
 														if (e.key === 'Enter' || e.key === 'Escape') {
