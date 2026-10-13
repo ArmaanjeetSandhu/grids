@@ -168,8 +168,8 @@
 	let pen = $state<Pen>('white');
 	let axis = $state<Axis>('across');
 	let editing = $state<{ keys: string[]; idx: number } | null>(null);
+	let selection = $state<string[]>([]);
 	let painting = false;
-	let lastPaint = { key: '', time: 0 };
 	let barStroke: boolean | null = null;
 
 	let chosenSymmetry = $state<SymmetryKey[]>([]);
@@ -391,7 +391,9 @@
 	);
 	const panelH = $derived(narrow ? Math.round(stageH * 0.4) : size ? size.rows * cell : 0);
 
-	const runSet = $derived(new Set(editing?.keys ?? []));
+	const multi = $derived(selection.length > 0);
+	const selectedSet = $derived(new Set(selection));
+	const runSet = $derived(new Set(multi ? [] : (editing?.keys ?? [])));
 	const caretKey = $derived(editing ? editing.keys[editing.idx] : null);
 	const caretPos = $derived(caretKey ? parseKey(caretKey) : null);
 
@@ -414,6 +416,7 @@
 		pen = 'white';
 		axis = 'across';
 		editing = null;
+		selection = [];
 		hoverKey = null;
 		symmetryOpen = false;
 		constraintsOpen = false;
@@ -466,6 +469,7 @@
 			title.trim() !== '';
 		if (used && !confirm('Start a new grid? This clears the current puzzle.')) return;
 		editing = null;
+		selection = [];
 		size = null;
 	}
 
@@ -486,6 +490,7 @@
 		);
 		if (activeClue) activeClue = transposeEntryId(activeClue);
 		if (editing) editing = { keys: editing.keys.map(transposeKey), idx: editing.idx };
+		selection = selection.map(transposeKey);
 		axis = otherAxis(axis);
 		chosenSymmetry = transposeSymmetry(chosenSymmetry);
 		hoverKey = null;
@@ -504,8 +509,8 @@
 			grid[k].black = black;
 			if (black) grid[k].letter = '';
 		}
-		lastPaint = { key, time: performance.now() };
 		editing = null;
+		selection = [];
 	}
 
 	function setBar(bar: Bar, on: boolean) {
@@ -514,12 +519,14 @@
 		for (const b of [bar, ...barCounterparts(bar, size.rows, size.cols, activeSymmetry)])
 			grid[keyOf(b.row, b.col)][barField(b.axis)] = on;
 		editing = null;
+		selection = [];
 	}
 
 	function onBarDown(e: PointerEvent, bar: Bar) {
 		e.preventDefault();
 		if (e.button !== 0) return;
 		editing = null;
+		selection = [];
 		painting = true;
 		barStroke = !grid[keyOf(bar.row, bar.col)][barField(bar.axis)];
 		setBar(bar, barStroke);
@@ -533,6 +540,11 @@
 	function onCellDown(e: PointerEvent, key: string) {
 		e.preventDefault();
 		if (e.button !== 0) return;
+		if (isMac ? e.metaKey : e.ctrlKey) {
+			toggleSelected(key);
+			return;
+		}
+		selection = [];
 		if (editing) {
 			const i = editing.keys.indexOf(key);
 			if (i >= 0 && (bars || pen === 'white')) {
@@ -546,7 +558,27 @@
 			return;
 		}
 		painting = true;
-		paint(key);
+		if (pen === 'white' && !grid[key].black) openEditor(key, axis);
+		else paint(key);
+	}
+
+	const isMac =
+		typeof navigator !== 'undefined' &&
+		/mac|iphone|ipad|ipod/i.test(
+			(navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ??
+				navigator.platform
+		);
+
+	function toggleSelected(key: string) {
+		if (grid[key].black) return;
+		const base = selection.length > 0 ? selection : caretKey && caretKey !== key ? [caretKey] : [];
+		const next = base.includes(key) ? base.filter((k) => k !== key) : [...base, key];
+		if (next.length === 0) {
+			input?.blur();
+			return;
+		}
+		openEditor(next.includes(key) ? key : next[next.length - 1], axis);
+		selection = next;
 	}
 
 	function onCellEnter(e: PointerEvent, key: string) {
@@ -554,15 +586,10 @@
 		if (!bars && painting && e.buttons & 1) paint(key);
 	}
 
-	function onCellDouble(key: string) {
-		if (bars || grid[key].black) return;
-		if (lastPaint.key === key && performance.now() - lastPaint.time < 600) return;
-		openEditor(key, axis);
-	}
-
 	async function openEditor(key: string, a: Axis) {
 		if (!size) return;
 		axis = a;
+		selection = [];
 		editing = { keys: runFrom(key, a, walls, size.rows, size.cols), idx: 0 };
 		await tick();
 		input?.focus({ preventScroll: true });
@@ -576,16 +603,26 @@
 
 	function closeEditor() {
 		editing = null;
+		selection = [];
 	}
 
 	function typeLetter(ch: string) {
 		if (!editing) return;
+		if (multi) {
+			for (const k of selection) grid[k].letter = ch.toLocaleUpperCase();
+			return;
+		}
 		grid[editing.keys[editing.idx]].letter = ch.toLocaleUpperCase();
 		if (editing.idx < editing.keys.length - 1) editing.idx++;
 	}
 
+	function clearSelected() {
+		for (const k of selection) grid[k].letter = '';
+	}
+
 	function backspace() {
 		if (!editing) return;
+		if (multi) return clearSelected();
 		const k = editing.keys[editing.idx];
 		if (grid[k].letter) grid[k].letter = '';
 		else if (editing.idx > 0) {
@@ -607,12 +644,15 @@
 			backspace();
 		} else if (e.key === 'Delete') {
 			e.preventDefault();
-			grid[editing.keys[editing.idx]].letter = '';
+			if (multi) clearSelected();
+			else grid[editing.keys[editing.idx]].letter = '';
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
 			e.preventDefault();
+			selection = [];
 			editing.idx = Math.max(0, editing.idx - 1);
 		} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
 			e.preventDefault();
+			selection = [];
 			editing.idx = Math.min(editing.keys.length - 1, editing.idx + 1);
 		} else if (e.key.length === 1 && /\p{L}/u.test(e.key) && !e.ctrlKey && !e.metaKey) {
 			e.preventDefault();
@@ -1103,10 +1143,9 @@
 									class:shade2={shade === 2}
 									class:shade3={shade === 3}
 									class:run={runSet.has(key) || clueSet.has(key)}
-									class:caret={key === caretKey}
+									class:caret={multi ? selectedSet.has(key) : key === caretKey}
 									onpointerdown={(e) => onCellDown(e, key)}
 									onpointerenter={(e) => onCellEnter(e, key)}
-									ondblclick={() => onCellDouble(key)}
 								/>
 								{#if flashing?.has(key)}
 									<rect class="unched" data-key={key} x={col} y={row} width="1" height="1" />
@@ -1167,7 +1206,7 @@
 								/>
 							{/each}
 
-							{#if caretPos}
+							{#if caretPos && !multi}
 								<polygon
 									class="arrow"
 									points={arrowPoints(axis, caretPos.col, caretPos.row)}
