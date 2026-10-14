@@ -121,6 +121,7 @@
 	let activeClue = $state<string | null>(null);
 	let title = $state('');
 	let extra = $state.raw<Record<string, unknown>>({});
+	let baseline = $state.raw<Record<string, string>>({});
 
 	const clueLists = $derived.by(() => {
 		const lists: Record<Axis, ClueRow[]> = { across: [], down: [] };
@@ -152,7 +153,7 @@
 
 	function download() {
 		if (!size) return;
-		const puzzle = toIpuz({ ...size, mode, grid, clues, title, extra });
+		const puzzle = toIpuz({ ...size, mode, grid, clues, title, extra, baseline });
 		const blob = new Blob([JSON.stringify(puzzle, null, 2) + '\n'], {
 			type: 'application/json'
 		});
@@ -232,7 +233,7 @@
 
 	$effect(() => {
 		if (!settingsRestored) return;
-		if (size) savePuzzle({ ...size, mode, grid, clues, title, extra });
+		if (size) savePuzzle({ ...size, mode, grid, clues, title, extra, baseline });
 		else clearPuzzle();
 	});
 
@@ -446,6 +447,7 @@
 		activeClue = null;
 		title = p.title;
 		extra = p.extra;
+		baseline = p.baseline;
 		pen = 'white';
 		axis = 'across';
 		editing = null;
@@ -559,7 +561,16 @@
 		if (!validSize(rows) || !validSize(cols)) return;
 		const fresh: Grid = {};
 		for (const k of allKeys(rows, cols)) fresh[k] = emptySquare();
-		load({ rows, cols, mode: modeInput, grid: fresh, clues: {}, title: '', extra: {} });
+		load({
+			rows,
+			cols,
+			mode: modeInput,
+			grid: fresh,
+			clues: {},
+			title: '',
+			extra: {},
+			baseline: {}
+		});
 	}
 
 	let importError = $state('');

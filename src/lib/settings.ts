@@ -80,7 +80,7 @@ function writeJson(key: string, value: unknown) {
 export function loadPuzzle(): Puzzle | null {
 	const data = readJson(PUZZLE_KEY);
 	if (!isRecord(data)) return null;
-	const { rows, cols, mode, grid: saved, clues: savedClues, title, extra } = data;
+	const { rows, cols, mode, grid: saved, clues: savedClues, title, extra, baseline } = data;
 	if (!validSize(rows) || !validSize(cols)) return null;
 	if (mode !== 'blocks' && mode !== 'bars') return null;
 	if (!isRecord(saved)) return null;
@@ -110,7 +110,12 @@ export function loadPuzzle(): Puzzle | null {
 		grid,
 		clues,
 		title: typeof title === 'string' ? title : '',
-		extra: isRecord(extra) ? extra : {}
+		extra: isRecord(extra) ? extra : {},
+		baseline: isRecord(baseline)
+			? Object.fromEntries(
+					Object.entries(baseline).filter((e): e is [string, string] => typeof e[1] === 'string')
+				)
+			: {}
 	};
 }
 

@@ -21,6 +21,7 @@ export interface Puzzle {
 	clues: Record<string, string>;
 	title: string;
 	extra: Record<string, unknown>;
+	baseline: Record<string, string>;
 }
 
 const VERSION = 'http://ipuz.org/v2';
@@ -44,6 +45,25 @@ const MANAGED = new Set([
 	'styles'
 ]);
 
+const TRACKED = ['title', 'dimensions', 'puzzle', 'solution', 'clues', 'saved', 'checksum'];
+const GRID = ['dimensions', 'puzzle', 'solution'];
+
+const DEPENDS: Record<string, string[]> = {
+	zones: ['dimensions', 'puzzle'],
+	answer: ['solution'],
+	answers: ['solution'],
+	enumeration: ['solution'],
+	enumerations: ['solution'],
+	misses: ['solution'],
+	uniqueid: GRID,
+	url: GRID
+};
+
+const ORIGIN = 'armaanjeetsandhu.github.io/grids';
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
 const toHtml = (text: string) =>
 	text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
@@ -65,7 +85,7 @@ function barsAt(grid: Grid, rows: number, cols: number, r: number, c: number): s
 	);
 }
 
-export function toIpuz(p: Puzzle) {
+function content(p: Puzzle) {
 	const isBlack = (key: string) => p.grid[key].black;
 	const { numbers, entries } = numberEntries(p.rows, p.cols, wallsOf(p.grid));
 	const rowsOf = (cell: (key: string) => string | number) =>
@@ -96,10 +116,7 @@ export function toIpuz(p: Puzzle) {
 			.map((e) => [e.number, toHtml(p.clues[entryId(e)] ?? '')]);
 	const title = p.title.trim();
 	return {
-		version: VERSION,
-		kind: [KIND],
 		...(title && { title: toHtml(title) }),
-		...p.extra,
 		dimensions: { width: p.cols, height: p.rows },
 		puzzle,
 		solution: rowsOf((key) => p.grid[key].letter || EMPTY),
@@ -107,8 +124,53 @@ export function toIpuz(p: Puzzle) {
 	};
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-	typeof v === 'object' && v !== null && !Array.isArray(v);
+const serialise = (fields: Record<string, unknown>) =>
+	Object.fromEntries(TRACKED.map((name) => [name, JSON.stringify(fields[name] ?? null)]));
+
+const stale = (volatility: unknown, changed: Set<string>) =>
+	typeof volatility !== 'string' || volatility.trim() === '*'
+		? changed.size > 0
+		: volatility.split(',').some((name) => changed.has(name.trim()));
+
+function carry(extra: Record<string, unknown>, changed: Set<string>, letters: string[]) {
+	const volatiles = isRecord(extra.volatile) ? extra.volatile : {};
+	const namespace = (name: string) => name.slice(0, name.indexOf(':'));
+	const kept: Record<string, unknown> = {};
+	for (const [name, value] of Object.entries(extra)) {
+		if (name === 'volatile') continue;
+		if (name.includes(':')) {
+			const volatility = volatiles[name] ?? volatiles[namespace(name)] ?? '*';
+			if (stale(volatility, changed)) continue;
+		} else if (name in DEPENDS && DEPENDS[name].some((f) => changed.has(f))) continue;
+		kept[name] = value;
+	}
+	if (typeof kept.charset === 'string' && changed.has('solution')) {
+		const charset = kept.charset;
+		kept.charset = charset + [...new Set(letters)].filter((ch) => !charset.includes(ch)).join('');
+	}
+	if (changed.size) kept.origin = ORIGIN;
+	const names = Object.keys(kept).filter((name) => name.includes(':'));
+	const declared = Object.entries(volatiles).filter(([key]) =>
+		key.includes(':') ? key in kept : names.some((name) => namespace(name) === key)
+	);
+	if (declared.length) kept.volatile = Object.fromEntries(declared);
+	return kept;
+}
+
+export function toIpuz(p: Puzzle) {
+	const body = content(p);
+	const now = serialise(body);
+	const changed = new Set(TRACKED.filter((name) => p.baseline[name] !== now[name]));
+	const letters = Object.values(p.grid).flatMap((s) => (s.black ? [] : [...s.letter]));
+	const { title, ...rest } = body;
+	return {
+		version: VERSION,
+		kind: [KIND],
+		...(title && { title }),
+		...carry(p.extra, changed, letters),
+		...rest
+	};
+}
 
 const field = (v: unknown, name: string) => (isRecord(v) ? v[name] : v);
 
@@ -208,15 +270,18 @@ export function fromIpuz(data: unknown): Puzzle {
 		});
 	}
 
-	return {
+	const puzzle: Puzzle = {
 		rows,
 		cols,
 		mode: barred ? 'bars' : 'blocks',
 		grid,
 		clues,
 		title: toText(data.title),
-		extra: Object.fromEntries(Object.entries(data).filter(([name]) => !MANAGED.has(name)))
+		extra: Object.fromEntries(Object.entries(data).filter(([name]) => !MANAGED.has(name))),
+		baseline: {}
 	};
+	puzzle.baseline = serialise({ ...content(puzzle), saved: data.saved, checksum: data.checksum });
+	return puzzle;
 }
 
 const CALLBACK = 'ipuz';
