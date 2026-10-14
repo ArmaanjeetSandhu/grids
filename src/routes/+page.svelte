@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
 	import smirk from '$lib/assets/smirk.svg';
@@ -52,6 +52,7 @@
 		smoothWidth
 	} from '$lib/motion';
 	import { rewriteReferences, transposeReferences } from '$lib/references';
+	import { clearPuzzle, loadPuzzle, loadSettings, savePuzzle, saveSettings } from '$lib/settings';
 	import {
 		barCounterparts,
 		counterparts,
@@ -202,6 +203,38 @@
 	let chosenConstraints = $state<ConstraintKey[]>([]);
 	let constraintsOpen = $state(false);
 	let constraintsEl = $state<HTMLDivElement>();
+
+	let settingsRestored = $state(false);
+
+	onMount(() => {
+		const saved = loadSettings();
+		if (saved.rows) sizeInput.rows = saved.rows;
+		if (saved.cols) sizeInput.cols = saved.cols;
+		if (saved.mode) modeInput = saved.mode;
+		if (saved.symmetry) chosenSymmetry = saved.symmetry;
+		if (saved.constraints) chosenConstraints = saved.constraints;
+		const puzzle = loadPuzzle();
+		if (puzzle) load(puzzle);
+		settingsRestored = true;
+		document.documentElement.removeAttribute('data-restoring');
+	});
+
+	$effect(() => {
+		if (!settingsRestored) return;
+		saveSettings({
+			rows: sizeInput.rows,
+			cols: sizeInput.cols,
+			mode: modeInput,
+			symmetry: [...chosenSymmetry],
+			constraints: [...chosenConstraints]
+		});
+	});
+
+	$effect(() => {
+		if (!settingsRestored) return;
+		if (size) savePuzzle({ ...size, mode, grid, clues, title, extra });
+		else clearPuzzle();
+	});
 
 	const offeredConstraints = $derived(
 		CONSTRAINTS.filter((c) => constraintApplies(c.key, mode, (stats?.black ?? 0) > 0))
@@ -909,6 +942,7 @@
 			<h1>Grids</h1>
 			<p>A crossword on a plain rectangular grid.</p>
 			<form
+				autocomplete="off"
 				onsubmit={(e) => {
 					e.preventDefault();
 					start();

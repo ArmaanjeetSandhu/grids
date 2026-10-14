@@ -5,6 +5,28 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		%sveltekit.head%
+		<!--
+			If a puzzle was saved, keep the setup card hidden until the app has
+			restored it, so it doesn't flash before the grid appears. The key must
+			match PUZZLE_KEY in src/lib/settings.ts. The timeout is a failsafe in
+			case the app never loads.
+		-->
+		<style>
+			html[data-restoring] .setup {
+				visibility: hidden;
+			}
+		</style>
+		<script>
+			try {
+				if (localStorage.getItem('grids:puzzle')) {
+					const root = document.documentElement;
+					root.setAttribute('data-restoring', '');
+					setTimeout(() => root.removeAttribute('data-restoring'), 3000);
+				}
+			} catch {
+				// Storage is unavailable, so there's nothing to restore.
+			}
+		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>
