@@ -9,12 +9,12 @@
 		allKeys,
 		barField,
 		emptySquare,
+		entryAt,
 		entryId,
 		keyOf,
 		numberEntries,
 		otherAxis,
 		parseKey,
-		runFrom,
 		transposeEntryId,
 		transposeGrid,
 		transposeKey,
@@ -502,13 +502,11 @@
 			return;
 		}
 		const ws = wallsOf(grid);
-		const run = runFrom(keys[0], axis, ws, rows, cols);
+		const run = entryAt(keys[0], axis, ws, rows, cols);
 		const intact =
 			keys.every(open) && run.length === keys.length && run.every((k, i) => k === keys[i]);
-		const next =
-			intact && keys.includes(target)
-				? { keys, idx: keys.indexOf(target) }
-				: { keys: runFrom(target, axis, ws, rows, cols), idx: 0 };
+		const entry = intact && keys.includes(target) ? keys : entryAt(target, axis, ws, rows, cols);
+		const next = { keys: entry, idx: entry.indexOf(target) };
 		if (forward && target === changed && grid[target].letter)
 			next.idx = Math.min(next.idx + 1, next.keys.length - 1);
 		editing = next;
@@ -710,7 +708,8 @@
 		if (!size) return;
 		axis = a;
 		selection = [];
-		editing = { keys: runFrom(key, a, walls, size.rows, size.cols), idx: 0 };
+		const keys = entryAt(key, a, walls, size.rows, size.cols);
+		editing = { keys, idx: keys.indexOf(key) };
 		await tick();
 		input?.focus({ preventScroll: true });
 	}
@@ -777,14 +776,16 @@
 			e.preventDefault();
 			if (multi) clearSelected();
 			else grid[editing.keys[editing.idx]].letter = '';
-		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+		} else if (e.key.startsWith('Arrow')) {
 			e.preventDefault();
+			const [back, ahead] =
+				axis === 'across' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+			if (e.key !== back && e.key !== ahead) return;
 			selection = [];
-			editing.idx = Math.max(0, editing.idx - 1);
-		} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-			e.preventDefault();
-			selection = [];
-			editing.idx = Math.min(editing.keys.length - 1, editing.idx + 1);
+			editing.idx =
+				e.key === back
+					? Math.max(0, editing.idx - 1)
+					: Math.min(editing.keys.length - 1, editing.idx + 1);
 		} else if (e.key.length === 1 && /\p{L}/u.test(e.key) && !e.ctrlKey && !e.metaKey) {
 			e.preventDefault();
 			typeLetter(e.key);

@@ -96,6 +96,26 @@ export function runFrom(
 	return keys;
 }
 
+export function entryStart(
+	key: string,
+	axis: Axis,
+	walls: Walls,
+	rows: number,
+	cols: number
+): string {
+	let { row, col } = parseKey(key);
+	for (;;) {
+		const [pr, pc] = axis === 'across' ? [row, col - 1] : [row - 1, col];
+		if (pr < 0 || pc < 0 || pr >= rows || pc >= cols) break;
+		if (walls.black(keyOf(pr, pc)) || walls.bar(pr, pc, axis)) break;
+		[row, col] = [pr, pc];
+	}
+	return keyOf(row, col);
+}
+
+export const entryAt = (key: string, axis: Axis, walls: Walls, rows: number, cols: number) =>
+	runFrom(entryStart(key, axis, walls, rows, cols), axis, walls, rows, cols);
+
 export interface Entry {
 	number: number;
 	axis: Axis;
