@@ -211,6 +211,9 @@
 
 	let settingsRestored = $state(false);
 
+	let confirmNewOpen = $state(false);
+	let confirmNewReturn: HTMLElement | null = null;
+
 	onMount(() => {
 		const saved = loadSettings();
 		if (saved.rows) sizeInput.rows = saved.rows;
@@ -613,10 +616,40 @@
 			) ||
 			Object.keys(clues).length > 0 ||
 			title.trim() !== '';
-		if (used && !confirm('Start a new grid? This clears the current puzzle.')) return;
+		if (used) {
+			confirmNewReturn =
+				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			confirmNewOpen = true;
+			return;
+		}
+		startNewGrid();
+	}
+
+	function startNewGrid() {
 		editing = null;
 		selection = [];
 		size = null;
+	}
+
+	function closeConfirmNew(confirmed: boolean) {
+		confirmNewOpen = false;
+		if (confirmed) startNewGrid();
+		else confirmNewReturn?.focus();
+		confirmNewReturn = null;
+	}
+
+	function trapModalFocus(e: KeyboardEvent) {
+		if (e.key !== 'Tab') return;
+		const focusable = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button');
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (e.shiftKey && document.activeElement === first) {
+			e.preventDefault();
+			last.focus();
+		} else if (!e.shiftKey && document.activeElement === last) {
+			e.preventDefault();
+			first.focus();
+		}
 	}
 
 	function transposePuzzle<
@@ -901,6 +934,13 @@
 	}
 
 	function onWindowKey(e: KeyboardEvent) {
+		if (confirmNewOpen) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeConfirmNew(false);
+			}
+			return;
+		}
 		const action = size && historyAction(e);
 		if (action) {
 			const t = e.target as HTMLElement | null;
@@ -1659,6 +1699,44 @@
 			{/if}
 		</div>
 	{/if}
+
+	{#if confirmNewOpen}
+		<div
+			class="modal-scrim"
+			role="presentation"
+			transition:fade={{ duration: DURATION.quick }}
+			onpointerdown={(e) => {
+				if (e.target === e.currentTarget) closeConfirmNew(false);
+			}}
+		>
+			<div
+				class="modal"
+				role="alertdialog"
+				aria-modal="true"
+				aria-labelledby="confirm-new-title"
+				aria-describedby="confirm-new-desc"
+				tabindex="-1"
+				transition:fly={{ y: 8 }}
+				onkeydown={trapModalFocus}
+			>
+				<h2 id="confirm-new-title">Start a new grid?</h2>
+				<p id="confirm-new-desc">This clears the current puzzle.</p>
+				<div class="modal-actions">
+					<button
+						type="button"
+						class="secondary"
+						onclick={() => closeConfirmNew(false)}
+						{@attach (el) => el.focus()}
+					>
+						Cancel
+					</button>
+					<button type="button" class="primary" onclick={() => closeConfirmNew(true)}>
+						New grid
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -1957,6 +2035,49 @@
 	.primary:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
+	}
+
+	.modal-scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: rgb(0 0 0 / 0.45);
+	}
+	.modal {
+		box-sizing: border-box;
+		width: min(24rem, 100%);
+		padding: 1.75rem 1.75rem 1.5rem;
+		background: var(--paper);
+		color: var(--ink);
+		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+	}
+	.modal:focus {
+		outline: none;
+	}
+	.modal h2 {
+		margin: 0;
+		font-size: 1.35rem;
+		font-weight: 800;
+		letter-spacing: -0.01em;
+		line-height: 1.15;
+	}
+	.modal p {
+		margin: 0.6rem 0 1.5rem;
+		line-height: 1.5;
+		color: #4a4f4c;
+	}
+	.modal-actions {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 0.5rem;
+	}
+	.modal-actions .primary,
+	.modal-actions .secondary {
+		padding: 0.6rem 1rem;
+		font-size: 0.9rem;
 	}
 
 	.main {
