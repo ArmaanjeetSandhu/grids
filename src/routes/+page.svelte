@@ -2,6 +2,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
+	import LegalLinks from '$lib/LegalLinks.svelte';
 	import smirk from '$lib/assets/smirk.svg';
 	import {
 		MAX_SIZE,
@@ -220,7 +221,7 @@
 		const puzzle = loadPuzzle();
 		if (puzzle) load(puzzle);
 		settingsRestored = true;
-		document.documentElement.removeAttribute('data-restoring');
+		delete document.documentElement.dataset.restoring;
 	});
 
 	$effect(() => {
@@ -996,81 +997,84 @@
 <main class="mat">
 	<Halftone />
 	{#if size === null}
-		<section class="setup" in:fly={{ y: 16, duration: DURATION.slow }}>
-			<h1>Grids</h1>
-			<p>A crossword on a plain rectangular grid.</p>
-			<form
-				autocomplete="off"
-				onsubmit={(e) => {
-					e.preventDefault();
-					start();
-				}}
-			>
-				<div class="sizes">
-					{#each DIMS as [dim, label] (dim)}
-						<div>
-							<label for="size-{dim}">{label}</label>
-							<div class="size-row">
-								<button
-									type="button"
-									class="step"
-									aria-label="Fewer {label.toLowerCase()}"
-									onclick={() => (sizeInput[dim] = Math.max(MIN_SIZE, sizeInput[dim] - 1))}
-									>−</button
-								>
-								<input
-									id="size-{dim}"
-									type="number"
-									min={MIN_SIZE}
-									max={MAX_SIZE}
-									bind:value={sizeInput[dim]}
-								/>
-								<button
-									type="button"
-									class="step"
-									aria-label="More {label.toLowerCase()}"
-									onclick={() => (sizeInput[dim] = Math.min(MAX_SIZE, sizeInput[dim] + 1))}
-									>+</button
-								>
+		<div class="setup-stack" in:fly={{ y: 16, duration: DURATION.slow }}>
+			<section class="setup">
+				<h1>Grids</h1>
+				<p>Free, open-source crossword maker</p>
+				<form
+					autocomplete="off"
+					onsubmit={(e) => {
+						e.preventDefault();
+						start();
+					}}
+				>
+					<div class="sizes">
+						{#each DIMS as [dim, label] (dim)}
+							<div>
+								<label for="size-{dim}">{label}</label>
+								<div class="size-row">
+									<button
+										type="button"
+										class="step"
+										aria-label="Fewer {label.toLowerCase()}"
+										onclick={() => (sizeInput[dim] = Math.max(MIN_SIZE, sizeInput[dim] - 1))}
+										>−</button
+									>
+									<input
+										id="size-{dim}"
+										type="number"
+										min={MIN_SIZE}
+										max={MAX_SIZE}
+										bind:value={sizeInput[dim]}
+									/>
+									<button
+										type="button"
+										class="step"
+										aria-label="More {label.toLowerCase()}"
+										onclick={() => (sizeInput[dim] = Math.min(MAX_SIZE, sizeInput[dim] + 1))}
+										>+</button
+									>
+								</div>
 							</div>
-						</div>
-					{/each}
-				</div>
-				<div class="create-row">
-					<div
-						class="segmented"
-						class:second={modeInput === MODES[1][0]}
-						role="radiogroup"
-						aria-label="Divided by"
-					>
-						<span class="segment-thumb" aria-hidden="true"></span>
-						{#each MODES as [value, label] (value)}
-							<label class="segment" class:on={modeInput === value}>
-								<input type="radio" name="mode" {value} bind:group={modeInput} />
-								{label}
-							</label>
 						{/each}
 					</div>
-					<button
-						type="submit"
-						class="primary"
-						disabled={!DIMS.every(
-							([dim]) => sizeInput[dim] >= MIN_SIZE && sizeInput[dim] <= MAX_SIZE
-						)}
-					>
-						Create
+					<div class="create-row">
+						<div
+							class="segmented"
+							class:second={modeInput === MODES[1][0]}
+							role="radiogroup"
+							aria-label="Divided by"
+						>
+							<span class="segment-thumb" aria-hidden="true"></span>
+							{#each MODES as [value, label] (value)}
+								<label class="segment" class:on={modeInput === value}>
+									<input type="radio" name="mode" {value} bind:group={modeInput} />
+									{label}
+								</label>
+							{/each}
+						</div>
+						<button
+							type="submit"
+							class="primary"
+							disabled={!DIMS.every(
+								([dim]) => sizeInput[dim] >= MIN_SIZE && sizeInput[dim] <= MAX_SIZE
+							)}
+						>
+							Create
+						</button>
+					</div>
+					<div class="or" aria-hidden="true">or</div>
+					<button type="button" class="secondary" onclick={() => importInput?.click()}>
+						Import IPUZ
 					</button>
-				</div>
-				<div class="or" aria-hidden="true">or</div>
-				<button type="button" class="secondary" onclick={() => importInput?.click()}>
-					Import IPUZ
-				</button>
-				<input bind:this={importInput} type="file" accept=".ipuz" hidden onchange={importFile} />
-				{#if importError}
-					<p class="import-error" role="alert" transition:slide>{importError}</p>
-				{/if}
-			</form>
-		</section>
+					<input bind:this={importInput} type="file" accept=".ipuz" hidden onchange={importFile} />
+					{#if importError}
+						<p class="import-error" role="alert" transition:slide>{importError}</p>
+					{/if}
+				</form>
+			</section>
+			<LegalLinks />
+		</div>
 	{:else}
 		<div class="main" in:fade={{ duration: DURATION.slow }}>
 			<header class="bar">
@@ -1755,11 +1759,16 @@
 		outline-offset: 2px;
 	}
 
+	.setup-stack {
+		margin: auto;
+		width: min(26rem, calc(100% - 2rem));
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
 	.setup {
 		--pair-gap: 0.5rem;
 		--pair-cols: minmax(0, 1fr) minmax(0, 1fr);
-		margin: auto;
-		width: min(26rem, calc(100% - 2rem));
 		box-sizing: border-box;
 		padding: 2rem 2rem 1.75rem;
 		background: var(--paper);

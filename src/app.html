@@ -12,7 +12,7 @@
 			case the app never loads.
 		-->
 		<style>
-			html[data-restoring] .setup {
+			html[data-restoring] .setup-stack {
 				visibility: hidden;
 			}
 		</style>
@@ -20,8 +20,8 @@
 			try {
 				if (localStorage.getItem('grids:puzzle')) {
 					const root = document.documentElement;
-					root.setAttribute('data-restoring', '');
-					setTimeout(() => root.removeAttribute('data-restoring'), 3000);
+					root.dataset.restoring = '';
+					setTimeout(() => delete root.dataset.restoring, 3000);
 				}
 			} catch {
 				// Storage is unavailable, so there's nothing to restore.
