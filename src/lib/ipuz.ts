@@ -13,6 +13,7 @@ import {
 	type Grid,
 	type GridMode
 } from './crossword';
+import { citedReferences, referenceKey, titled } from './references';
 
 export interface Puzzle {
 	rows: number;
@@ -145,10 +146,22 @@ function content(p: Puzzle) {
 			};
 		})
 	);
+	const present = new Set(entries.map((e) => referenceKey(e.axis, e.number)));
 	const cluesFor = (axis: Axis) =>
 		entries
 			.filter((e) => e.axis === axis)
-			.map((e) => [e.number, toHtml(p.clues[entryId(e)] ?? '')]);
+			.map((e) => {
+				const text = p.clues[entryId(e)] ?? '';
+				const self = referenceKey(e.axis, e.number);
+				const references = citedReferences(text)
+					.filter((r) => {
+						const key = referenceKey(r.axis, r.number);
+						return key !== self && present.has(key);
+					})
+					.map((r) => ({ direction: titled(r.axis), number: r.number }));
+				const clue = toHtml(text);
+				return references.length ? { number: e.number, clue, references } : [e.number, clue];
+			});
 	const title = p.title.trim();
 	const rebuses: [number, number][] = [];
 	for (let r = 0; r < p.rows; r++)

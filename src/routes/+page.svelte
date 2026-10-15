@@ -55,7 +55,7 @@
 		slide,
 		smoothWidth
 	} from '$lib/motion';
-	import { rewriteReferences, transposeReferences } from '$lib/references';
+	import { linkedEntries, rewriteReferences, transposeReferences } from '$lib/references';
 	import { clearPuzzle, loadPuzzle, loadSettings, savePuzzle, saveSettings } from '$lib/settings';
 	import {
 		barCounterparts,
@@ -436,6 +436,14 @@
 	const selectedSet = $derived(new Set(selection));
 	const runSet = $derived(new Set(multi ? [] : (editing?.keys ?? [])));
 	const caretKey = $derived(editing ? editing.keys[editing.idx] : null);
+	const linkedSet = $derived.by(() => {
+		const active = new Set([
+			...(editing && !multi ? [entryId({ axis, keys: editing.keys })] : []),
+			...(activeClue ? [activeClue] : [])
+		]);
+		if (!numbering || active.size === 0) return new Set<string>();
+		return new Set(linkedEntries(numbering.entries, clues, active).flatMap((e) => e.keys));
+	});
 	const caretPos = $derived(caretKey ? parseKey(caretKey) : null);
 
 	function cursorFor(p: Pen) {
@@ -1463,6 +1471,7 @@
 									class:shade1={shade === 1}
 									class:shade2={shade === 2}
 									class:shade3={shade === 3}
+									class:linked={linkedSet.has(key)}
 									class:run={runSet.has(key) || clueSet.has(key)}
 									class:caret={multi ? selectedSet.has(key) : key === caretKey}
 									onpointerdown={(e) => onCellDown(e, key)}
@@ -1768,6 +1777,7 @@
 		--two-letter: #6a32d6;
 		--rebus: #0b7285;
 		--run: #fff1a1;
+		--linked: #fffbdc;
 		--caret: #f4c430;
 		--on-mat: #eef3ef;
 		--on-mat-dim: rgb(238 243 239 / 0.72);
@@ -2656,6 +2666,9 @@
 	}
 	.sq.shade3 {
 		fill: var(--shade-3);
+	}
+	.sq.linked {
+		fill: var(--linked);
 	}
 	.sq.run {
 		fill: var(--run);

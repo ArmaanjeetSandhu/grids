@@ -1,4 +1,4 @@
-import { entryId, transposeEntryId, type Axis, type Numbering } from './crossword';
+import { entryId, transposeEntryId, type Axis, type Entry, type Numbering } from './crossword';
 
 export interface Reference {
 	axis: Axis;
@@ -34,16 +34,31 @@ const matchCase = (word: string, model: string) => {
 	return word;
 };
 
-const titled = (axis: Axis) => (axis === 'across' ? 'Across' : 'Down');
+export const titled = (axis: Axis) => (axis === 'across' ? 'Across' : 'Down');
+
+const axisOf = (word: string): Axis => (word.toLowerCase() === 'across' ? 'across' : 'down');
+
+const citedIn = (leading: string, last: string) => [
+	...[...leading.matchAll(DIGITS)].map((m) => Number(m[0])),
+	Number(last)
+];
+
+export function citedReferences(text: string): Reference[] {
+	const seen = new Map<string, Reference>();
+	for (const [, leading, last, , word] of text.matchAll(REFERENCE_RUN)) {
+		const axis = axisOf(word);
+		for (const number of citedIn(leading, last))
+			seen.set(referenceKey(axis, number), { axis, number });
+	}
+	return [...seen.values()];
+}
 
 export function rewriteReferences(text: string, map: ReferenceMap): string {
 	return text.replace(
 		REFERENCE_RUN,
 		(run: string, leading: string, last: string, gap: string, word: string) => {
-			const axis: Axis = word.toLowerCase() === 'across' ? 'across' : 'down';
-			const cited = [...leading.matchAll(DIGITS)].map((m) => Number(m[0]));
-			cited.push(Number(last));
-			const found = cited.map((n) => map.get(referenceKey(axis, n)));
+			const axis = axisOf(word);
+			const found = citedIn(leading, last).map((n) => map.get(referenceKey(axis, n)));
 			if (found.includes(undefined)) return run;
 
 			const moved = found as Reference[];
@@ -55,4 +70,24 @@ export function rewriteReferences(text: string, map: ReferenceMap): string {
 			return `${head}${numbers[0]}${gap}${matchCase(titled(landing), word)}`;
 		}
 	);
+}
+
+export function linkedEntries(
+	entries: Entry[],
+	clues: Record<string, string>,
+	active: Set<string>
+): Entry[] {
+	const byNumber = new Map(entries.map((e) => [referenceKey(e.axis, e.number), e]));
+	const cites = (e: Entry) =>
+		new Set(citedReferences(clues[entryId(e)] ?? '').map((r) => referenceKey(r.axis, r.number)));
+	const sources = entries.filter((e) => active.has(entryId(e)));
+	const targets = new Set(sources.map((e) => referenceKey(e.axis, e.number)));
+	const linked = new Set<Entry>();
+	for (const e of sources)
+		for (const key of cites(e)) {
+			const cited = byNumber.get(key);
+			if (cited) linked.add(cited);
+		}
+	for (const e of entries) if ([...cites(e)].some((key) => targets.has(key))) linked.add(e);
+	return [...linked].filter((e) => !active.has(entryId(e)));
 }
