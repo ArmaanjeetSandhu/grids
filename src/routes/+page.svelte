@@ -6,11 +6,14 @@
 	import {
 		MAX_SIZE,
 		MIN_SIZE,
+		REBUS_MAX,
 		allKeys,
 		barField,
 		emptySquare,
 		entryAt,
 		entryId,
+		isLetter,
+		isRebusChar,
 		keyOf,
 		numberEntries,
 		otherAxis,
@@ -527,7 +530,11 @@
 		const open = (k: string | undefined): k is string => !!k && !!grid[k] && !grid[k].black;
 		const { keys } = editing;
 		const changed = allKeys(rows, cols).find(
-			(k) => open(k) && (grid[k].letter !== prev[k]?.letter || grid[k].circled !== prev[k]?.circled)
+			(k) =>
+				open(k) &&
+				(grid[k].letter !== prev[k]?.letter ||
+					grid[k].circled !== prev[k]?.circled ||
+					grid[k].rebus !== prev[k]?.rebus)
 		);
 		const target = changed ?? keys[editing.idx];
 		selection = [];
@@ -542,7 +549,7 @@
 			keys.every(open) && run.length === keys.length && run.every((k, i) => k === keys[i]);
 		const entry = intact && keys.includes(target) ? keys : entryAt(target, axis, ws, rows, cols);
 		const next = { keys: entry, idx: entry.indexOf(target) };
-		if (forward && target === changed && grid[target].letter)
+		if (forward && target === changed && grid[target].letter && !grid[target].rebus)
 			next.idx = Math.min(next.idx + 1, next.keys.length - 1);
 		editing = next;
 	}
@@ -600,7 +607,7 @@
 	function newGrid() {
 		const used =
 			Object.values(grid).some(
-				(s) => s.black || s.letter || s.barRight || s.barBottom || s.circled
+				(s) => s.black || s.letter || s.barRight || s.barBottom || s.circled || s.rebus
 			) ||
 			Object.keys(clues).length > 0 ||
 			title.trim() !== '';
@@ -669,6 +676,7 @@
 			if (black) {
 				grid[k].letter = '';
 				grid[k].circled = false;
+				grid[k].rebus = false;
 			}
 		}
 		editing = null;
@@ -769,14 +777,45 @@
 		selection = [];
 	}
 
+	function enter(key: string, ch: string): boolean {
+		const sq = grid[key];
+		const value = ch.toLocaleUpperCase();
+		if (sq.rebus) {
+			if (!isRebusChar(ch)) return false;
+			if ([...sq.letter].length < REBUS_MAX) sq.letter += value;
+			return true;
+		}
+		if (!isLetter(ch)) return false;
+		sq.letter = value;
+		return true;
+	}
+
 	function typeLetter(ch: string) {
 		if (!editing) return;
 		if (multi) {
-			for (const k of selection) grid[k].letter = ch.toLocaleUpperCase();
+			for (const k of selection) enter(k, ch);
 			return;
 		}
-		grid[editing.keys[editing.idx]].letter = ch.toLocaleUpperCase();
+		const key = editing.keys[editing.idx];
+		if (!enter(key, ch) || grid[key].rebus) return;
 		if (editing.idx < editing.keys.length - 1) editing.idx++;
+	}
+
+	function typeable(ch: string) {
+		if (!editing || [...ch].length !== 1) return false;
+		const keys = multi ? selection : [editing.keys[editing.idx]];
+		return keys.some((k) => (grid[k].rebus ? isRebusChar(ch) : isLetter(ch)));
+	}
+
+	function toggleRebus() {
+		if (!editing) return;
+		const keys = (multi ? selection : [editing.keys[editing.idx]]).filter((k) => !grid[k].black);
+		if (keys.length === 0) return;
+		const rebus = !keys.every((k) => grid[k].rebus);
+		for (const k of keys) {
+			grid[k].rebus = rebus;
+			if (!rebus && !isLetter(grid[k].letter)) grid[k].letter = '';
+		}
 	}
 
 	function toggleCircles() {
@@ -795,7 +834,8 @@
 		if (!editing) return;
 		if (multi) return clearSelected();
 		const k = editing.keys[editing.idx];
-		if (grid[k].letter) grid[k].letter = '';
+		if (grid[k].rebus && grid[k].letter) grid[k].letter = [...grid[k].letter].slice(0, -1).join('');
+		else if (grid[k].letter) grid[k].letter = '';
 		else if (editing.idx > 0) {
 			editing.idx--;
 			grid[editing.keys[editing.idx]].letter = '';
@@ -807,6 +847,9 @@
 		if (e.code === 'KeyC' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			e.preventDefault();
 			toggleCircles();
+		} else if (e.code === 'KeyR' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			e.preventDefault();
+			toggleRebus();
 		} else if (e.key === 'Enter') {
 			e.preventDefault();
 			toggleDirection();
@@ -830,7 +873,7 @@
 				e.key === back
 					? Math.max(0, editing.idx - 1)
 					: Math.min(editing.keys.length - 1, editing.idx + 1);
-		} else if (e.key.length === 1 && /\p{L}/u.test(e.key) && !e.ctrlKey && !e.metaKey) {
+		} else if (typeable(e.key) && !e.ctrlKey && !e.metaKey) {
 			e.preventDefault();
 			typeLetter(e.key);
 		}
@@ -839,7 +882,7 @@
 
 	function onInput(e: Event) {
 		const el = e.currentTarget as HTMLInputElement;
-		for (const ch of el.value) if (/\p{L}/u.test(ch)) typeLetter(ch);
+		for (const ch of el.value) if (typeable(ch)) typeLetter(ch);
 		el.value = '';
 		commit();
 	}
@@ -895,6 +938,10 @@
 	};
 	const arrowPoints = (dir: Axis, x: number, y: number) =>
 		ARROWS[dir].map(([a, b]) => `${x + a},${y + b}`).join(' ');
+
+	const REBUS_MARK = 0.28;
+	const rebusPoints = (x: number, y: number) =>
+		`${x + 1 - REBUS_MARK},${y + 1} ${x + 1},${y + 1} ${x + 1},${y + 1 - REBUS_MARK}`;
 
 	const NUM = { x: 0.06, y: 0.05, size: 0.27 };
 	const NUM_INK = 0.74;
@@ -1408,6 +1455,13 @@
 										transition:fade={{ duration: DURATION.quick }}
 									/>
 								{/if}
+								{#if sq.rebus && !sq.black}
+									<polygon
+										class="rebus"
+										points={rebusPoints(col, row)}
+										transition:fade={{ duration: DURATION.quick }}
+									/>
+								{/if}
 								{#if sq.letter && !sq.black}
 									{#key sq.letter}
 										<text
@@ -1629,6 +1683,7 @@
 		--shade-3: #8fdc9b;
 		--unched: #d7263d;
 		--two-letter: #6a32d6;
+		--rebus: #0b7285;
 		--run: #fff1a1;
 		--caret: #f4c430;
 		--on-mat: #eef3ef;
@@ -2531,6 +2586,11 @@
 		font-weight: 500;
 		text-anchor: start;
 		dominant-baseline: hanging;
+	}
+
+	polygon.rebus {
+		fill: var(--rebus);
+		pointer-events: none;
 	}
 
 	path.ring {

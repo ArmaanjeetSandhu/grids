@@ -8,12 +8,24 @@ export interface Square {
 	barRight: boolean;
 	barBottom: boolean;
 	circled: boolean;
+	rebus: boolean;
 }
 
 export type Grid = Record<string, Square>;
 
 export const MIN_SIZE = 5;
 export const MAX_SIZE = 21;
+
+export const REBUS_MAX = 5;
+
+const SINGLE_LETTER = /^\p{L}$/u;
+const REBUS_CHAR = /^[\p{L}\p{N}\p{P}\p{S}]$/u;
+
+export const isLetter = (ch: string) => SINGLE_LETTER.test(ch);
+
+export const isRebusChar = (ch: string) => REBUS_CHAR.test(ch);
+
+export const needsRebus = (value: string) => value !== '' && !isLetter(value);
 
 export const validSize = (n: unknown): n is number =>
 	typeof n === 'number' && Number.isInteger(n) && n >= MIN_SIZE && n <= MAX_SIZE;
@@ -41,7 +53,8 @@ export const emptySquare = (): Square => ({
 	letter: '',
 	barRight: false,
 	barBottom: false,
-	circled: false
+	circled: false,
+	rebus: false
 });
 
 export function transposeGrid(grid: Grid, rows: number, cols: number): Grid {
@@ -54,7 +67,8 @@ export function transposeGrid(grid: Grid, rows: number, cols: number): Grid {
 				letter: square.letter,
 				barRight: square.barBottom,
 				barBottom: square.barRight,
-				circled: square.circled
+				circled: square.circled,
+				rebus: square.rebus
 			};
 		}
 	return flipped;

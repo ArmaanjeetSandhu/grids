@@ -4,6 +4,7 @@ import {
 	emptySquare,
 	entryId,
 	keyOf,
+	needsRebus,
 	numberEntries,
 	validSize,
 	wallsOf,
@@ -30,6 +31,12 @@ const BLOCK = '#';
 const EMPTY = 0;
 const CIRCLE = 'circle';
 
+const BLOCK_FALLBACKS = ['@', '%', '~'];
+const EMPTY_FALLBACKS = ['.', '_', '-'];
+
+const REBUS_FIELD = 'io.github.armaanjeetsandhu.grids:rebus';
+const REBUS_VOLATILITY = 'dimensions,puzzle,solution';
+
 const MANAGED = new Set([
 	'version',
 	'kind',
@@ -42,10 +49,20 @@ const MANAGED = new Set([
 	'empty',
 	'saved',
 	'checksum',
-	'styles'
+	'styles',
+	REBUS_FIELD
 ]);
 
-const TRACKED = ['title', 'dimensions', 'puzzle', 'solution', 'clues', 'saved', 'checksum'];
+const TRACKED = [
+	'title',
+	'dimensions',
+	'puzzle',
+	'solution',
+	'clues',
+	'saved',
+	'checksum',
+	REBUS_FIELD
+];
 const GRID = ['dimensions', 'puzzle', 'solution'];
 
 const DEPENDS: Record<string, string[]> = {
@@ -85,22 +102,40 @@ function barsAt(grid: Grid, rows: number, cols: number, r: number, c: number): s
 	);
 }
 
+const numeric = (v: string) => /^\d+$/.test(v);
+
+const sameValue = (a: string, b: string) =>
+	a === b || (numeric(a) && numeric(b) && Number(a) === Number(b));
+
+function marker<T extends string | number>(preferred: T, fallbacks: string[], taken: string[]) {
+	const free = (token: string) => !taken.some((value) => sameValue(value, token));
+	if (free(String(preferred))) return preferred;
+	const spare = fallbacks.find(free);
+	if (spare !== undefined) return spare;
+	let token = fallbacks[0];
+	while (!free(token)) token += fallbacks[0];
+	return token;
+}
+
 function content(p: Puzzle) {
 	const isBlack = (key: string) => p.grid[key].black;
 	const { numbers, entries } = numberEntries(p.rows, p.cols, wallsOf(p.grid));
+	const values = Object.values(p.grid).flatMap((s) => (s.black || !s.letter ? [] : [s.letter]));
+	const block = marker(BLOCK, BLOCK_FALLBACKS, values);
+	const empty = marker(EMPTY, EMPTY_FALLBACKS, [...values, String(block)]);
 	const rowsOf = (cell: (key: string) => string | number) =>
 		Array.from({ length: p.rows }, (_, r) =>
 			Array.from({ length: p.cols }, (_, c) => {
 				const key = keyOf(r, c);
-				return isBlack(key) ? BLOCK : cell(key);
+				return isBlack(key) ? block : cell(key);
 			})
 		);
-	const label = (key: string) => numbers.get(key) ?? EMPTY;
+	const label = (key: string) => numbers.get(key) ?? empty;
 	const puzzle = Array.from({ length: p.rows }, (_, r) =>
 		Array.from({ length: p.cols }, (_, c) => {
 			const key = keyOf(r, c);
 			const black = isBlack(key);
-			const cell = black ? BLOCK : label(key);
+			const cell = black ? block : label(key);
 			const barred = barsAt(p.grid, p.rows, p.cols, r, c);
 			const circled = !black && p.grid[key].circled;
 			if (!barred && !circled) return cell;
@@ -115,12 +150,21 @@ function content(p: Puzzle) {
 			.filter((e) => e.axis === axis)
 			.map((e) => [e.number, toHtml(p.clues[entryId(e)] ?? '')]);
 	const title = p.title.trim();
+	const rebuses: [number, number][] = [];
+	for (let r = 0; r < p.rows; r++)
+		for (let c = 0; c < p.cols; c++) {
+			const square = p.grid[keyOf(r, c)];
+			if (!square.black && square.rebus && !needsRebus(square.letter)) rebuses.push([c, r]);
+		}
 	return {
 		...(title && { title: toHtml(title) }),
+		...(block !== BLOCK && { block }),
+		...(empty !== EMPTY && { empty }),
 		dimensions: { width: p.cols, height: p.rows },
 		puzzle,
-		solution: rowsOf((key) => p.grid[key].letter || EMPTY),
-		clues: { Across: cluesFor('across'), Down: cluesFor('down') }
+		solution: rowsOf((key) => p.grid[key].letter || empty),
+		clues: { Across: cluesFor('across'), Down: cluesFor('down') },
+		...(rebuses.length && { [REBUS_FIELD]: rebuses })
 	};
 }
 
@@ -163,11 +207,17 @@ export function toIpuz(p: Puzzle) {
 	const changed = new Set(TRACKED.filter((name) => p.baseline[name] !== now[name]));
 	const letters = Object.values(p.grid).flatMap((s) => (s.black ? [] : [...s.letter]));
 	const { title, ...rest } = body;
+	const kept = carry(p.extra, changed, letters);
+	if (REBUS_FIELD in rest)
+		kept.volatile = {
+			...(isRecord(kept.volatile) ? kept.volatile : {}),
+			[REBUS_FIELD]: REBUS_VOLATILITY
+		};
 	return {
 		version: VERSION,
 		kind: [KIND],
 		...(title && { title }),
-		...carry(p.extra, changed, letters),
+		...kept,
 		...rest
 	};
 }
@@ -216,6 +266,13 @@ export function fromIpuz(data: unknown): Puzzle {
 		const shape = styleOf(r, c).shapebg;
 		return typeof shape === 'string' && shape.trim().toLowerCase() === CIRCLE;
 	};
+	const flagged = new Set<string>();
+	if (Array.isArray(data[REBUS_FIELD]))
+		for (const at of data[REBUS_FIELD]) {
+			if (!Array.isArray(at)) continue;
+			const [c, r] = at;
+			if (Number.isInteger(c) && Number.isInteger(r)) flagged.add(keyOf(r, c));
+		}
 	const grid: Grid = {};
 	const labelled = new Map<string, string>();
 	for (let r = 0; r < rows; r++) {
@@ -235,7 +292,8 @@ export function fromIpuz(data: unknown): Puzzle {
 				letter: letter.toLocaleUpperCase(),
 				barRight: c + 1 < cols && (here.includes('R') || sides(r, c + 1).includes('L')),
 				barBottom: r + 1 < rows && (here.includes('B') || sides(r + 1, c).includes('T')),
-				circled: !black && circledAt(r, c)
+				circled: !black && circledAt(r, c),
+				rebus: !black && (flagged.has(key) || needsRebus(letter))
 			};
 			if (black || label === undefined) continue;
 			if (label !== empty && !labelled.has(label)) labelled.set(label, key);

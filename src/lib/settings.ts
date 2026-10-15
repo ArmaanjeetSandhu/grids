@@ -1,5 +1,5 @@
 import { CONSTRAINTS, type ConstraintKey } from './constraints';
-import { allKeys, validSize, type Grid, type GridMode } from './crossword';
+import { allKeys, needsRebus, validSize, type Grid, type GridMode } from './crossword';
 import type { Puzzle } from './ipuz';
 import { SYMMETRIES, type SymmetryKey } from './symmetry';
 
@@ -89,12 +89,15 @@ export function loadPuzzle(): Puzzle | null {
 	for (const key of allKeys(rows, cols)) {
 		const sq = saved[key];
 		if (!isRecord(sq)) return null;
+		const black = sq.black === true;
+		const letter = typeof sq.letter === 'string' ? sq.letter : '';
 		grid[key] = {
-			black: sq.black === true,
-			letter: typeof sq.letter === 'string' ? sq.letter : '',
+			black,
+			letter,
 			barRight: sq.barRight === true,
 			barBottom: sq.barBottom === true,
-			circled: sq.circled === true
+			circled: sq.circled === true,
+			rebus: !black && (sq.rebus === true || needsRebus(letter))
 		};
 	}
 
