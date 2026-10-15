@@ -173,7 +173,7 @@
 
 	let pen = $state<Pen>('white');
 	let axis = $state<Axis>('across');
-	let editing = $state<{ keys: string[]; idx: number } | null>(null);
+	let editing = $state<{ keys: string[]; idx: number; anchor: number } | null>(null);
 	let selection = $state<string[]>([]);
 	let painting = false;
 	let barStroke: boolean | null = null;
@@ -549,7 +549,8 @@
 		const intact =
 			keys.every(open) && run.length === keys.length && run.every((k, i) => k === keys[i]);
 		const entry = intact && keys.includes(target) ? keys : entryAt(target, axis, ws, rows, cols);
-		const next = { keys: entry, idx: entry.indexOf(target) };
+		const idx = entry.indexOf(target);
+		const next = { keys: entry, idx, anchor: idx };
 		if (forward && target === changed && grid[target].letter && !grid[target].rebus)
 			next.idx = Math.min(next.idx + 1, next.keys.length - 1);
 		editing = next;
@@ -655,7 +656,7 @@
 		grid = flipped.grid;
 		clues = flipped.clues;
 		if (activeClue) activeClue = transposeEntryId(activeClue);
-		if (editing) editing = { keys: editing.keys.map(transposeKey), idx: editing.idx };
+		if (editing) editing = { ...editing, keys: editing.keys.map(transposeKey) };
 		selection = selection.map(transposeKey);
 		axis = otherAxis(axis);
 		chosenSymmetry = transposeSymmetry(chosenSymmetry);
@@ -719,7 +720,7 @@
 		if (editing) {
 			const i = editing.keys.indexOf(key);
 			if (i >= 0 && (bars || pen === 'white')) {
-				editing.idx = i;
+				editing.idx = editing.anchor = i;
 				return;
 			}
 			editing = null;
@@ -762,7 +763,8 @@
 		axis = a;
 		selection = [];
 		const keys = entryAt(key, a, walls, size.rows, size.cols);
-		editing = { keys, idx: keys.indexOf(key) };
+		const idx = keys.indexOf(key);
+		editing = { keys, idx, anchor: idx };
 		await tick();
 		input?.focus({ preventScroll: true });
 	}
@@ -799,7 +801,8 @@
 		}
 		const key = editing.keys[editing.idx];
 		if (!enter(key, ch) || grid[key].rebus) return;
-		if (editing.idx < editing.keys.length - 1) editing.idx++;
+		const next = (editing.idx + 1) % editing.keys.length;
+		if (next !== editing.anchor) editing.idx = next;
 	}
 
 	function typeable(ch: string) {
@@ -838,7 +841,7 @@
 		if (grid[k].rebus && grid[k].letter) grid[k].letter = [...grid[k].letter].slice(0, -1).join('');
 		else if (grid[k].letter) grid[k].letter = '';
 		else if (editing.idx > 0) {
-			editing.idx--;
+			editing.idx = editing.anchor = editing.idx - 1;
 			grid[editing.keys[editing.idx]].letter = '';
 		}
 	}
@@ -870,10 +873,8 @@
 				axis === 'across' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
 			if (e.key !== back && e.key !== ahead) return;
 			selection = [];
-			editing.idx =
-				e.key === back
-					? Math.max(0, editing.idx - 1)
-					: Math.min(editing.keys.length - 1, editing.idx + 1);
+			const n = editing.keys.length;
+			editing.idx = editing.anchor = (editing.idx + (e.key === back ? n - 1 : 1)) % n;
 		} else if (typeable(e.key) && !e.ctrlKey && !e.metaKey) {
 			e.preventDefault();
 			typeLetter(e.key);
