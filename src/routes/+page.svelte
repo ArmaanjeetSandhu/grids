@@ -1870,7 +1870,7 @@
 										{#if clueLists[ax].length === 0}
 											<p class="empty">No {ax} entries.</p>
 										{:else}
-											<ol>
+											<ol style:--num-digits={String(clueLists[ax].at(-1)?.number ?? 1).length}>
 												{#each clueLists[ax] as c (c.id)}
 													<li
 														class:active={activeClue === c.id || gridClue === c.id}
@@ -2740,6 +2740,7 @@
 		display: none;
 	}
 	.clue-col {
+		--row-inset: calc(0.3rem + 1px);
 		min-width: 0;
 	}
 	.title-field {
@@ -2902,8 +2903,8 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		margin: -1rem 0 0.5rem;
-		padding: 1rem 0 0.35rem;
+		margin: -1rem calc(-1 * var(--row-inset)) 0.5rem;
+		padding: 1rem var(--row-inset) 0.35rem;
 		background: color-mix(in srgb, var(--mat) 80%, #000);
 		border-bottom: 1px solid rgb(255 255 255 / 0.18);
 		font-size: 0.75rem;
@@ -2921,10 +2922,11 @@
 	}
 	.clues li {
 		display: grid;
-		grid-template-columns: 1.6rem 1fr;
-		column-gap: 0.25rem;
+		grid-template-columns: auto 1fr;
+		column-gap: 0.35rem;
 		align-items: baseline;
-		padding: 0.25rem 0.3rem;
+		margin-inline: calc(-1 * var(--row-inset));
+		padding: 0.25rem calc(var(--row-inset) - 1px);
 		border-radius: 4px;
 		border: 1px solid transparent;
 		transition:
@@ -2940,7 +2942,7 @@
 		font-size: 0.85rem;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
-		padding-right: 0.2rem;
+		min-width: calc(var(--num-digits, 2) * 1ch);
 	}
 	.clues textarea {
 		min-width: 0;
