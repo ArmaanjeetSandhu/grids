@@ -42,7 +42,7 @@
 		whiteRegions,
 		type ConstraintKey
 	} from '$lib/constraints';
-	import { parseIpuz, toIpuz, type Puzzle } from '$lib/ipuz';
+	import { parseIpuz, toIpuz, unchangedSinceImport, type Puzzle } from '$lib/ipuz';
 	import {
 		DURATION,
 		bloom,
@@ -55,7 +55,14 @@
 		slide,
 		smoothWidth
 	} from '$lib/motion';
-	import { linkedEntries, rewriteReferences, transposeReferences } from '$lib/references';
+	import {
+		citedReferences,
+		linkedEntries,
+		referenceKey,
+		rewriteReferences,
+		titled,
+		transposeReferences
+	} from '$lib/references';
 	import { clearPuzzle, loadPuzzle, loadSettings, savePuzzle, saveSettings } from '$lib/settings';
 	import {
 		barCounterparts,
@@ -171,6 +178,80 @@
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
 
+	const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+	function downloadIssues(): string[] {
+		if (!size) return [];
+		const issues: string[] = [];
+		if (unchangedSinceImport({ ...size, mode, grid, clues, title, extra, baseline }))
+			issues.push('Nothing has changed since this puzzle was imported.');
+		if (symmetric === false) issues.push(`The grid breaks its symmetry (${symmetryName}).`);
+		issues.push(...constraintNotes('behind'));
+		const white = cells.filter(({ key }) => !grid[key].black);
+		const vacant = white.filter(({ key }) => !grid[key].letter).length;
+		if (vacant)
+			issues.push(`${plural(vacant, 'white square is', 'white squares are')} still empty.`);
+		if (!title.trim())
+			issues.push(`The puzzle has no title. File will be saved as ${fileName('')}.`);
+		const placeholders = [...clueLists.across, ...clueLists.down].filter((c) => {
+			const text = clues[c.id]?.trim();
+			return !text || text === `Clue for ${c.word}`;
+		}).length;
+		if (placeholders)
+			issues.push(
+				`${plural(placeholders, 'clue still has', 'clues still have')} placeholder text.`
+			);
+		const entries = numbering?.entries ?? [];
+		const answers = entries
+			.filter((e) => e.keys.every((k) => grid[k].letter))
+			.map((e) => e.keys.map((k) => grid[k].letter.toLocaleUpperCase()).join(''));
+		const repeated = [...new Set(answers.filter((a, i) => answers.indexOf(a) !== i))];
+		if (repeated.length)
+			issues.push(
+				`${plural(repeated.length, 'answer appears', 'answers appear')} more than once: ${repeated.join(', ')}.`
+			);
+		const present = new Set(entries.map((e) => referenceKey(e.axis, e.number)));
+		const dangling = entries.map((e) =>
+			citedReferences(clues[entryId(e)] ?? '')
+				.filter((r) => !present.has(referenceKey(r.axis, r.number)))
+				.map((r) => `${r.number}-${titled(r.axis)}`)
+		);
+		const citing = dangling.filter((refs) => refs.length > 0).length;
+		const missing = [...new Set(dangling.flat())];
+		if (citing)
+			issues.push(
+				`${plural(citing, 'clue refers', 'clues refer')} to ${missing.length === 1 ? 'an entry that doesn’t' : 'entries that don’t'} exist: ${missing.join(', ')}.`
+			);
+		const singleRebus = white.filter(
+			({ key }) => grid[key].rebus && isLetter(grid[key].letter)
+		).length;
+		if (singleRebus)
+			issues.push(
+				`${plural(singleRebus, 'rebus square holds', 'rebus squares hold')} just one letter.`
+			);
+		return issues;
+	}
+
+	let confirmDownloadOpen = $state(false);
+	let confirmDownloadIssues = $state<string[]>([]);
+	let confirmDownloadReturn: HTMLElement | null = null;
+
+	function requestDownload() {
+		const issues = downloadIssues();
+		if (issues.length === 0) return download();
+		confirmDownloadIssues = issues;
+		confirmDownloadReturn =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		confirmDownloadOpen = true;
+	}
+
+	function closeConfirmDownload(confirmed: boolean) {
+		confirmDownloadOpen = false;
+		if (confirmed) download();
+		confirmDownloadReturn?.focus();
+		confirmDownloadReturn = null;
+	}
+
 	let pen = $state<Pen>('white');
 	let axis = $state<Axis>('across');
 	let editing = $state<{ keys: string[]; idx: number; anchor: number } | null>(null);
@@ -274,6 +355,40 @@
 	);
 	const twoLetterSquares = $derived(new Set(twoLetters?.flatMap((e) => e.keys)));
 	const constraintsName = $derived(chosenConstraints.length > 0 ? 'On' : 'Off');
+
+	function constraintNotes(where: 'below' | 'behind'): string[] {
+		const notes: string[] = [];
+		if (interlock && regions && regions.count > 1)
+			notes.push(`The white squares fall into ${regions.count} separate regions, shaded ${where}.`);
+		if (unched && unched.size > 0)
+			notes.push(
+				`${
+					unched.size === 1
+						? 'One white square is unchecked'
+						: `${unched.size} white squares are unchecked`
+				}, flashing ${where}.`
+			);
+		if (consecutive && consecutive.size > 0)
+			notes.push(`${consecutive.size} white squares are consecutive unches, flashing ${where}.`);
+		if (cheaters && cheaters.size > 0)
+			notes.push(
+				`${
+					cheaters.size === 1
+						? 'One black square is a cheater'
+						: `${cheaters.size} black squares are cheaters`
+				}, smirking ${where}.`
+			);
+		if (twoLetters && twoLetters.length > 0)
+			notes.push(
+				`${
+					twoLetters.length === 1
+						? 'One entry is two letters long'
+						: `${twoLetters.length} entries are two letters long`
+				}, hatched ${where}.`
+			);
+		return notes;
+	}
+	const constraintNote = $derived(constraintNotes('below').join(' '));
 
 	const constraintStats = $derived(
 		constraintStatus(regions, unched, consecutive, cheaters, twoLetters)
@@ -949,6 +1064,13 @@
 			}
 			return;
 		}
+		if (confirmDownloadOpen) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeConfirmDownload(false);
+			}
+			return;
+		}
 		const action = size && historyAction(e);
 		if (action) {
 			const t = e.target as HTMLElement | null;
@@ -1347,29 +1469,9 @@
 											</span>
 										</label>
 									{/each}
-									{#if (interlock && regions && regions.count > 1) || (unched && unched.size > 0) || (consecutive && consecutive.size > 0) || (cheaters && cheaters.size > 0) || (twoLetters && twoLetters.length > 0)}
+									{#if constraintNote}
 										<p class="menu-note" role="status" transition:slide>
-											{#if interlock && regions && regions.count > 1}
-												The white squares fall into {regions.count} separate regions, shaded below.
-											{/if}
-											{#if unched && unched.size > 0}
-												{unched.size === 1
-													? 'One white square is unchecked'
-													: `${unched.size} white squares are unchecked`}, flashing below.
-											{/if}
-											{#if consecutive && consecutive.size > 0}
-												{consecutive.size} white squares are consecutive unches, flashing below.
-											{/if}
-											{#if cheaters && cheaters.size > 0}
-												{cheaters.size === 1
-													? 'One black square is a cheater'
-													: `${cheaters.size} black squares are cheaters`}, smirking below.
-											{/if}
-											{#if twoLetters && twoLetters.length > 0}
-												{twoLetters.length === 1
-													? 'One entry is two letters long'
-													: `${twoLetters.length} entries are two letters long`}, hatched below.
-											{/if}
+											{constraintNote}
 										</p>
 									{/if}
 									<button
@@ -1400,7 +1502,7 @@
 						<button
 							class="chip"
 							onmousedown={keepFocus}
-							onclick={download}
+							onclick={requestDownload}
 							title="Download the puzzle as IPUZ"
 						>
 							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -1746,6 +1848,51 @@
 			</div>
 		</div>
 	{/if}
+
+	{#if confirmDownloadOpen}
+		<div
+			class="modal-scrim"
+			role="presentation"
+			transition:fade={{ duration: DURATION.quick }}
+			onpointerdown={(e) => {
+				if (e.target === e.currentTarget) closeConfirmDownload(false);
+			}}
+		>
+			<div
+				class="modal"
+				role="alertdialog"
+				aria-modal="true"
+				aria-labelledby="confirm-download-title"
+				aria-describedby="confirm-download-desc"
+				tabindex="-1"
+				transition:fly={{ y: 8 }}
+				onkeydown={trapModalFocus}
+			>
+				<h2 id="confirm-download-title">Download anyway?</h2>
+				<div id="confirm-download-desc">
+					<p class="issues-lead">This puzzle may not be ready yet:</p>
+					<ul class="issues">
+						{#each confirmDownloadIssues as issue (issue)}
+							<li>{issue}</li>
+						{/each}
+					</ul>
+				</div>
+				<div class="modal-actions">
+					<button
+						type="button"
+						class="secondary"
+						onclick={() => closeConfirmDownload(false)}
+						{@attach (el) => el.focus()}
+					>
+						Cancel
+					</button>
+					<button type="button" class="primary" onclick={() => closeConfirmDownload(true)}>
+						Download
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -2076,6 +2223,15 @@
 	}
 	.modal p {
 		margin: 0.6rem 0 1.5rem;
+		line-height: 1.5;
+		color: #4a4f4c;
+	}
+	.modal .issues-lead {
+		margin-bottom: 0.4rem;
+	}
+	.modal .issues {
+		margin: 0 0 1.5rem;
+		padding-left: 1.25rem;
 		line-height: 1.5;
 		color: #4a4f4c;
 	}

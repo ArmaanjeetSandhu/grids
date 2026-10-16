@@ -184,6 +184,14 @@ function content(p: Puzzle) {
 const serialise = (fields: Record<string, unknown>) =>
 	Object.fromEntries(TRACKED.map((name) => [name, JSON.stringify(fields[name] ?? null)]));
 
+const CONTENT = ['title', ...GRID, 'clues', REBUS_FIELD];
+
+export function unchangedSinceImport(p: Puzzle): boolean {
+	if (Object.keys(p.baseline).length === 0) return false;
+	const now = serialise(content(p));
+	return CONTENT.every((name) => p.baseline[name] === now[name]);
+}
+
 const stale = (volatility: unknown, changed: Set<string>) =>
 	typeof volatility !== 'string' || volatility.trim() === '*'
 		? changed.size > 0
