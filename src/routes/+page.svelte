@@ -560,6 +560,23 @@
 		return new Set(linkedEntries(numbering.entries, clues, active).flatMap((e) => e.keys));
 	});
 	const caretPos = $derived(caretKey ? parseKey(caretKey) : null);
+	const gridClue = $derived.by(() => {
+		if (!editing || multi) return null;
+		const id = entryId({ axis, keys: editing.keys });
+		return clueLists[axis].some((c) => c.id === id) ? id : null;
+	});
+
+	let cluesEl = $state<HTMLElement>();
+	$effect(() => {
+		const id = gridClue;
+		if (!id || !cluesEl) return;
+		const row = cluesEl.querySelector<HTMLElement>(`[data-clue="${CSS.escape(id)}"]`);
+		if (!row) return;
+		const panel = cluesEl.getBoundingClientRect();
+		const box = row.getBoundingClientRect();
+		const target = cluesEl.scrollTop + box.top - panel.top - (panel.height - box.height) / 2;
+		cluesEl.scrollTo({ top: target, behavior: flipDuration() ? 'smooth' : 'auto' });
+	});
 
 	function cursorFor(p: Pen) {
 		const arrow = 'M2 2 L2 19 L6.5 14.5 L9.5 21.5 L12.5 20.2 L9.6 13.4 L15.5 13.4 Z';
@@ -1690,6 +1707,7 @@
 					<aside
 						class="clues"
 						aria-label="Clues"
+						bind:this={cluesEl}
 						style:width="{panelW}px"
 						style:height="{panelH}px"
 						style:margin-top={narrow ? null : `${GUTTER.y}px`}
@@ -1720,7 +1738,8 @@
 									<ol>
 										{#each clueLists[ax] as c (c.id)}
 											<li
-												class:active={activeClue === c.id}
+												class:active={activeClue === c.id || gridClue === c.id}
+												data-clue={c.id}
 												animate:flip={{ duration: flipDuration() }}
 												in:fade
 											>
