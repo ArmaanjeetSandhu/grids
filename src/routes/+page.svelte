@@ -42,7 +42,7 @@
 		whiteRegions,
 		type ConstraintKey
 	} from '$lib/constraints';
-	import { parseIpuz, toIpuz, unchangedSinceImport, type Puzzle } from '$lib/ipuz';
+	import { MAX_AUTHORS, parseIpuz, toIpuz, unchangedSinceImport, type Puzzle } from '$lib/ipuz';
 	import {
 		DURATION,
 		bloom,
@@ -131,6 +131,10 @@
 	let clues = $state<Record<string, string>>({});
 	let activeClue = $state<string | null>(null);
 	let title = $state('');
+	let authors = $state<string[]>(['']);
+	let intro = $state('');
+	let notes = $state('');
+	let cluePage = $state<'clues' | 'details'>('clues');
 	let extra = $state.raw<Record<string, unknown>>({});
 	let baseline = $state.raw<Record<string, string>>({});
 
@@ -151,6 +155,34 @@
 	);
 	const clueText = (c: ClueRow) => clues[c.id] ?? `Clue for ${c.word}`;
 
+	function showPage(page: 'clues' | 'details') {
+		cluePage = page;
+		cluesEl?.scrollTo({ top: 0 });
+	}
+
+	async function addAuthor() {
+		if (authors.length >= MAX_AUTHORS) return;
+		authors = [...authors, ''];
+		commit();
+		await tick();
+		document.getElementById(`puzzle-author-${authors.length - 1}`)?.focus();
+	}
+
+	async function removeAuthor(i: number) {
+		authors = authors.filter((_, j) => j !== i);
+		commit();
+		await tick();
+		document.getElementById(`puzzle-author-${Math.min(i, authors.length - 1)}`)?.focus();
+	}
+
+	function blurOn(keys: string[]) {
+		return (e: KeyboardEvent & { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
+			if (!keys.includes(e.key)) return;
+			e.preventDefault();
+			e.currentTarget.blur();
+		};
+	}
+
 	function fileName(t: string) {
 		const safe = t
 			// eslint-disable-next-line no-control-regex
@@ -164,7 +196,18 @@
 
 	function download() {
 		if (!size) return;
-		const puzzle = toIpuz({ ...size, mode, grid, clues, title, extra, baseline });
+		const puzzle = toIpuz({
+			...size,
+			mode,
+			grid,
+			clues,
+			title,
+			authors,
+			intro,
+			notes,
+			extra,
+			baseline
+		});
 		const blob = new Blob([JSON.stringify(puzzle, null, 2) + '\n'], {
 			type: 'application/json'
 		});
@@ -183,7 +226,20 @@
 	function downloadIssues(): string[] {
 		if (!size) return [];
 		const issues: string[] = [];
-		if (unchangedSinceImport({ ...size, mode, grid, clues, title, extra, baseline }))
+		if (
+			unchangedSinceImport({
+				...size,
+				mode,
+				grid,
+				clues,
+				title,
+				authors,
+				intro,
+				notes,
+				extra,
+				baseline
+			})
+		)
 			issues.push('Nothing has changed since this puzzle was imported.');
 		if (symmetric === false) issues.push(`The grid breaks its symmetry (${symmetryName}).`);
 		issues.push(...constraintNotes('behind'));
@@ -321,7 +377,8 @@
 
 	$effect(() => {
 		if (!settingsRestored) return;
-		if (size) savePuzzle({ ...size, mode, grid, clues, title, extra, baseline });
+		if (size)
+			savePuzzle({ ...size, mode, grid, clues, title, authors, intro, notes, extra, baseline });
 		else clearPuzzle();
 	});
 
@@ -593,6 +650,10 @@
 		clues = p.clues;
 		activeClue = null;
 		title = p.title;
+		authors = p.authors.length ? p.authors.slice(0, MAX_AUTHORS) : [''];
+		intro = p.intro;
+		notes = p.notes;
+		cluePage = 'clues';
 		extra = p.extra;
 		baseline = p.baseline;
 		pen = 'white';
@@ -618,6 +679,9 @@
 		grid: Grid;
 		clues: Record<string, string>;
 		title: string;
+		authors: string[];
+		intro: string;
+		notes: string;
 	};
 
 	const HISTORY_LIMIT = 500;
@@ -627,7 +691,7 @@
 
 	function serialize() {
 		if (!size) return '';
-		const snapshot: Snapshot = { ...size, grid, clues, title };
+		const snapshot: Snapshot = { ...size, grid, clues, title, authors, intro, notes };
 		return JSON.stringify(snapshot);
 	}
 
@@ -663,6 +727,9 @@
 		grid = next.grid;
 		clues = next.clues;
 		title = next.title;
+		authors = next.authors;
+		intro = next.intro;
+		notes = next.notes;
 		present = serialized;
 		hoverKey = null;
 		settleCaret(prev.grid, forward);
@@ -720,6 +787,9 @@
 			grid: fresh,
 			clues: {},
 			title: '',
+			authors: [],
+			intro: '',
+			notes: '',
 			extra: {},
 			baseline: {}
 		});
@@ -755,7 +825,10 @@
 				(s) => s.black || s.letter || s.barRight || s.barBottom || s.circled || s.rebus
 			) ||
 			Object.keys(clues).length > 0 ||
-			title.trim() !== '';
+			title.trim() !== '' ||
+			authors.some((a) => a.trim() !== '') ||
+			intro.trim() !== '' ||
+			notes.trim() !== '';
 		if (used) {
 			confirmNewReturn =
 				document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1704,72 +1777,144 @@
 						/>
 					</div>
 
-					<aside
-						class="clues"
-						aria-label="Clues"
-						bind:this={cluesEl}
+					<div
+						class="clue-sheet"
 						style:width="{panelW}px"
 						style:height="{panelH}px"
 						style:margin-top={narrow ? null : `${GUTTER.y}px`}
 					>
-						<div class="title-field">
-							<input
-								id="puzzle-title"
-								type="text"
-								placeholder="Untitled puzzle"
-								autocomplete="off"
-								spellcheck="true"
-								bind:value={title}
-								onblur={commit}
-								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === 'Escape') {
-										e.preventDefault();
-										e.currentTarget.blur();
-									}
-								}}
-							/>
-						</div>
-						{#each [['across', 'Across'], ['down', 'Down']] as const as [ax, title] (ax)}
-							<section class="clue-col">
-								<h2>{title}</h2>
-								{#if clueLists[ax].length === 0}
-									<p class="empty">No {ax} entries.</p>
-								{:else}
-									<ol>
-										{#each clueLists[ax] as c (c.id)}
-											<li
-												class:active={activeClue === c.id || gridClue === c.id}
-												data-clue={c.id}
-												animate:flip={{ duration: flipDuration() }}
-												in:fade
-											>
-												<label for="clue-{c.id}" class="clue-num">{c.number}</label>
-												<textarea
-													id="clue-{c.id}"
-													rows="1"
-													value={clueText(c)}
-													aria-label="{c.number} {title}, {c.word}"
-													spellcheck="true"
-													oninput={(e) => (clues[c.id] = e.currentTarget.value)}
-													onfocus={() => (activeClue = c.id)}
-													onblur={() => {
-														if (activeClue === c.id) activeClue = null;
-														commit();
-													}}
-													onkeydown={(e) => {
-														if (e.key === 'Enter' || e.key === 'Escape') {
-															e.preventDefault();
-															e.currentTarget.blur();
-														}
-													}}></textarea>
-												<span class="answer">{c.word} ({c.word.length})</span>
-											</li>
-										{/each}
-									</ol>
-								{/if}
-							</section>
-						{/each}
-					</aside>
+						<aside
+							class="clues"
+							class:on-details={cluePage === 'details'}
+							aria-label={cluePage === 'details' ? 'Puzzle details' : 'Clues'}
+							bind:this={cluesEl}
+						>
+							<div class="title-field">
+								<input
+									id="puzzle-title"
+									aria-label="Title"
+									type="text"
+									placeholder="Untitled puzzle"
+									autocomplete="off"
+									spellcheck="true"
+									bind:value={title}
+									onblur={commit}
+									onkeydown={blurOn(['Enter', 'Escape'])}
+								/>
+							</div>
+							{#if cluePage === 'details'}
+								<section class="details" aria-label="Puzzle details">
+									<div class="detail" role="group" aria-labelledby="details-by">
+										<span class="detail-label" id="details-by">By</span>
+										<div class="authors">
+											{#each authors, i (i)}
+												<div class="author-row" in:fade>
+													<input
+														id="puzzle-author-{i}"
+														type="text"
+														placeholder={i === 0 ? 'Author' : 'Another author'}
+														aria-label="Author {i + 1}"
+														autocomplete="off"
+														spellcheck="false"
+														bind:value={authors[i]}
+														onblur={commit}
+														onkeydown={blurOn(['Enter', 'Escape'])}
+													/>
+													{#if i > 0}
+														<button
+															type="button"
+															class="author-button"
+															aria-label="Remove author {i + 1}"
+															title="Remove this author"
+															onclick={() => removeAuthor(i)}>&minus;</button
+														>
+													{/if}
+													{#if i === authors.length - 1 && authors.length < MAX_AUTHORS}
+														<button
+															type="button"
+															class="author-button"
+															aria-label="Add another author"
+															title="Add another author"
+															onclick={addAuthor}>+</button
+														>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									</div>
+									<label class="detail">
+										<span class="detail-label">Intro</span>
+										<textarea
+											rows="3"
+											placeholder="Shown to solvers before they start: a theme description, special instructions, an explanation of how the puzzle works, or anything else that helps them get going."
+											spellcheck="true"
+											bind:value={intro}
+											onblur={commit}
+											onkeydown={blurOn(['Escape'])}></textarea>
+									</label>
+									<label class="detail">
+										<span class="detail-label">Notes</span>
+										<textarea
+											rows="3"
+											placeholder="Free-form notes about the puzzle: constructor comments, background information, dedications, errata, or other details."
+											spellcheck="true"
+											bind:value={notes}
+											onblur={commit}
+											onkeydown={blurOn(['Escape'])}></textarea>
+									</label>
+								</section>
+							{:else}
+								{#each [['across', 'Across'], ['down', 'Down']] as const as [ax, title] (ax)}
+									<section class="clue-col">
+										<h2>{title}</h2>
+										{#if clueLists[ax].length === 0}
+											<p class="empty">No {ax} entries.</p>
+										{:else}
+											<ol>
+												{#each clueLists[ax] as c (c.id)}
+													<li
+														class:active={activeClue === c.id || gridClue === c.id}
+														data-clue={c.id}
+														animate:flip={{ duration: flipDuration() }}
+														in:fade
+													>
+														<label for="clue-{c.id}" class="clue-num">{c.number}</label>
+														<textarea
+															id="clue-{c.id}"
+															rows="1"
+															value={clueText(c)}
+															aria-label="{c.number} {title}, {c.word}"
+															spellcheck="true"
+															oninput={(e) => (clues[c.id] = e.currentTarget.value)}
+															onfocus={() => (activeClue = c.id)}
+															onblur={() => {
+																if (activeClue === c.id) activeClue = null;
+																commit();
+															}}
+															onkeydown={(e) => {
+																if (e.key === 'Enter' || e.key === 'Escape') {
+																	e.preventDefault();
+																	e.currentTarget.blur();
+																}
+															}}></textarea>
+														<span class="answer">{c.word} ({c.word.length})</span>
+													</li>
+												{/each}
+											</ol>
+										{/if}
+									</section>
+								{/each}
+							{/if}
+						</aside>
+						<button
+							type="button"
+							class="page-curl"
+							class:left={cluePage === 'details'}
+							aria-label={cluePage === 'details' ? 'Back to clues' : 'Turn to puzzle details'}
+							title={cluePage === 'details' ? 'Back to clues' : 'Puzzle details'}
+							onclick={() => showPage(cluePage === 'details' ? 'clues' : 'details')}
+						></button>
+					</div>
 				</div>
 			</div>
 
@@ -2572,8 +2717,14 @@
 		align-items: center;
 	}
 
-	.clues {
+	.clue-sheet {
+		--curl: 1.6rem;
 		flex: 0 0 auto;
+		position: relative;
+	}
+	.clues {
+		width: 100%;
+		height: 100%;
 		box-sizing: border-box;
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -2595,10 +2746,15 @@
 		grid-column: 1 / -1;
 		padding-top: 0.75rem;
 		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
+		align-items: flex-end;
+		padding-right: calc(var(--curl) - 0.5rem);
+	}
+	.clues.on-details .title-field {
+		padding-right: 0;
+		padding-left: calc(var(--curl) - 0.5rem);
 	}
 	.title-field input {
+		flex: 1;
 		min-width: 0;
 		box-sizing: border-box;
 		font: inherit;
@@ -2622,6 +2778,125 @@
 	.title-field input:focus-visible {
 		outline: none;
 		border-bottom: 1px solid var(--rule);
+	}
+	.page-curl {
+		position: absolute;
+		top: 0;
+		right: 0;
+		z-index: 2;
+		width: var(--curl);
+		height: var(--curl);
+		padding: 0;
+		border: 0;
+		background: linear-gradient(225deg, var(--mat) 50%, transparent 50%);
+		transition:
+			width var(--t-base) var(--ease-out),
+			height var(--t-base) var(--ease-out);
+	}
+	.page-curl::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			225deg,
+			transparent 50%,
+			rgb(255 255 255 / 0.92) 50%,
+			rgb(214 226 219 / 0.85) 75%,
+			rgb(168 186 176 / 0.8) 100%
+		);
+		border-bottom-left-radius: 45% 45%;
+		filter: drop-shadow(-2px 2px 2px rgb(0 0 0 / 0.35));
+	}
+	.page-curl.left {
+		right: auto;
+		left: 0;
+		transform: scaleX(-1);
+	}
+	.page-curl:hover,
+	.page-curl:focus-visible {
+		--curl: 2.1rem;
+	}
+	.page-curl:focus-visible {
+		outline-offset: 0;
+	}
+	.details {
+		grid-column: 1 / -1;
+		display: flex;
+		flex-direction: column;
+		gap: 1.1rem;
+		padding-top: 0.25rem;
+	}
+	.detail {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.detail-label {
+		padding-bottom: 0.35rem;
+		border-bottom: 1px solid rgb(255 255 255 / 0.18);
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.authors {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.author-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.4rem;
+	}
+	.author-row input {
+		flex: 1;
+		min-width: 0;
+		box-sizing: border-box;
+		font: inherit;
+		font-size: 0.85rem;
+		color: inherit;
+		background: transparent;
+		border: 0;
+		border-bottom: 1px dashed rgb(255 255 255 / 0.3);
+		border-radius: 0;
+		padding: 0.15rem 0;
+		transition: border-color var(--t-quick) var(--ease-out);
+	}
+	.author-row input::placeholder,
+	.details textarea::placeholder {
+		color: var(--on-mat-dim);
+	}
+	.author-row input:hover {
+		border-bottom-color: rgb(255 255 255 / 0.6);
+	}
+	.author-row input:focus-visible {
+		outline: none;
+		border-bottom: 1px solid var(--rule);
+	}
+	.author-button {
+		flex: 0 0 auto;
+		width: 1.5rem;
+		height: 1.5rem;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		font-size: 1rem;
+		line-height: 1;
+		background: transparent;
+		border: 1px solid rgb(255 255 255 / 0.35);
+		border-radius: 4px;
+		transition:
+			background-color var(--t-quick) var(--ease-out),
+			border-color var(--t-quick) var(--ease-out),
+			color var(--t-quick) var(--ease-out);
+	}
+	.author-button:hover {
+		border-color: var(--rule);
+		color: var(--rule);
+	}
+	.details textarea {
+		min-height: 4.2em;
 	}
 	.clues h2 {
 		position: sticky;

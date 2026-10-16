@@ -22,6 +22,9 @@ export interface Puzzle {
 	grid: Grid;
 	clues: Record<string, string>;
 	title: string;
+	authors: string[];
+	intro: string;
+	notes: string;
 	extra: Record<string, unknown>;
 	baseline: Record<string, string>;
 }
@@ -38,10 +41,15 @@ const EMPTY_FALLBACKS = ['.', '_', '-'];
 const REBUS_FIELD = 'io.github.armaanjeetsandhu.grids:rebus';
 const REBUS_VOLATILITY = 'dimensions,puzzle,solution';
 
+export const MAX_AUTHORS = 3;
+
+const DETAILS = ['author', 'intro', 'notes'];
+
 const MANAGED = new Set([
 	'version',
 	'kind',
 	'title',
+	...DETAILS,
 	'dimensions',
 	'puzzle',
 	'solution',
@@ -56,6 +64,7 @@ const MANAGED = new Set([
 
 const TRACKED = [
 	'title',
+	...DETAILS,
 	'dimensions',
 	'puzzle',
 	'solution',
@@ -85,11 +94,40 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const toHtml = (text: string) =>
 	text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
-function toText(html: unknown): string {
+const toMultilineHtml = (text: string) => toHtml(text).replace(/\r?\n/g, '<br>');
+
+function toText(html: unknown, lineBreak = ' '): string {
 	if (typeof html !== 'string') return '';
 	if (!/[&<]/.test(html)) return html.trim();
-	const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, ' '), 'text/html');
+	const doc = new DOMParser().parseFromString(
+		html.replace(/<br[ \r\n\t]*\/?>/gi, lineBreak),
+		'text/html'
+	);
 	return (doc.body.textContent ?? '').trim();
+}
+
+export function joinAuthors(authors: string[]): string {
+	const names = authors.map((a) => a.trim()).filter(Boolean);
+	if (names.length < 3) return names.join(' and ');
+	return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+export function splitAuthors(byline: string): string[] {
+	const text = byline.trim();
+	if (!text) return [];
+	const names = text
+		.split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
+		.map((name) => name.trim())
+		.filter(Boolean);
+	return names.length > 0 && names.length <= MAX_AUTHORS ? names : [text];
+}
+
+export function detailsOf(data: Record<string, unknown>) {
+	return {
+		authors: splitAuthors(toText(data.author)),
+		intro: toText(data.intro, '\n'),
+		notes: toText(data.notes, '\n')
+	};
 }
 
 function barsAt(grid: Grid, rows: number, cols: number, r: number, c: number): string {
@@ -163,6 +201,9 @@ function content(p: Puzzle) {
 				return references.length ? { number: e.number, clue, references } : [e.number, clue];
 			});
 	const title = p.title.trim();
+	const author = joinAuthors(p.authors);
+	const intro = p.intro.trim();
+	const notes = p.notes.trim();
 	const rebuses: [number, number][] = [];
 	for (let r = 0; r < p.rows; r++)
 		for (let c = 0; c < p.cols; c++) {
@@ -171,6 +212,9 @@ function content(p: Puzzle) {
 		}
 	return {
 		...(title && { title: toHtml(title) }),
+		...(author && { author: toHtml(author) }),
+		...(intro && { intro: toMultilineHtml(intro) }),
+		...(notes && { notes: toMultilineHtml(notes) }),
 		...(block !== BLOCK && { block }),
 		...(empty !== EMPTY && { empty }),
 		dimensions: { width: p.cols, height: p.rows },
@@ -184,12 +228,12 @@ function content(p: Puzzle) {
 const serialise = (fields: Record<string, unknown>) =>
 	Object.fromEntries(TRACKED.map((name) => [name, JSON.stringify(fields[name] ?? null)]));
 
-const CONTENT = ['title', ...GRID, 'clues', REBUS_FIELD];
+const CONTENT = ['title', ...DETAILS, ...GRID, 'clues', REBUS_FIELD];
 
 export function unchangedSinceImport(p: Puzzle): boolean {
 	if (Object.keys(p.baseline).length === 0) return false;
 	const now = serialise(content(p));
-	return CONTENT.every((name) => p.baseline[name] === now[name]);
+	return CONTENT.every((name) => (p.baseline[name] ?? 'null') === now[name]);
 }
 
 const stale = (volatility: unknown, changed: Set<string>) =>
@@ -202,7 +246,7 @@ function carry(extra: Record<string, unknown>, changed: Set<string>, letters: st
 	const namespace = (name: string) => name.slice(0, name.indexOf(':'));
 	const kept: Record<string, unknown> = {};
 	for (const [name, value] of Object.entries(extra)) {
-		if (name === 'volatile') continue;
+		if (name === 'volatile' || MANAGED.has(name)) continue;
 		if (name.includes(':')) {
 			const volatility = volatiles[name] ?? volatiles[namespace(name)] ?? '*';
 			if (stale(volatility, changed)) continue;
@@ -225,9 +269,9 @@ function carry(extra: Record<string, unknown>, changed: Set<string>, letters: st
 export function toIpuz(p: Puzzle) {
 	const body = content(p);
 	const now = serialise(body);
-	const changed = new Set(TRACKED.filter((name) => p.baseline[name] !== now[name]));
+	const changed = new Set(TRACKED.filter((name) => (p.baseline[name] ?? 'null') !== now[name]));
 	const letters = Object.values(p.grid).flatMap((s) => (s.black ? [] : [...s.letter]));
-	const { title, ...rest } = body;
+	const { title, author, intro, notes, ...rest } = body;
 	const kept = carry(p.extra, changed, letters);
 	if (REBUS_FIELD in rest)
 		kept.volatile = {
@@ -238,6 +282,9 @@ export function toIpuz(p: Puzzle) {
 		version: VERSION,
 		kind: [KIND],
 		...(title && { title }),
+		...(author && { author }),
+		...(intro && { intro }),
+		...(notes && { notes }),
 		...kept,
 		...rest
 	};
@@ -356,6 +403,7 @@ export function fromIpuz(data: unknown): Puzzle {
 		grid,
 		clues,
 		title: toText(data.title),
+		...detailsOf(data),
 		extra: Object.fromEntries(Object.entries(data).filter(([name]) => !MANAGED.has(name))),
 		baseline: {}
 	};

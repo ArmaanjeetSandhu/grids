@@ -1,6 +1,6 @@
 import { CONSTRAINTS, type ConstraintKey } from './constraints';
 import { allKeys, needsRebus, validSize, type Grid, type GridMode } from './crossword';
-import type { Puzzle } from './ipuz';
+import { MAX_AUTHORS, detailsOf, type Puzzle } from './ipuz';
 import { SYMMETRIES, type SymmetryKey } from './symmetry';
 
 export type Settings = {
@@ -80,7 +80,19 @@ function writeJson(key: string, value: unknown) {
 export function loadPuzzle(): Puzzle | null {
 	const data = readJson(PUZZLE_KEY);
 	if (!isRecord(data)) return null;
-	const { rows, cols, mode, grid: saved, clues: savedClues, title, extra, baseline } = data;
+	const {
+		rows,
+		cols,
+		mode,
+		grid: saved,
+		clues: savedClues,
+		title,
+		authors,
+		intro,
+		notes,
+		extra,
+		baseline
+	} = data;
 	if (!validSize(rows) || !validSize(cols)) return null;
 	if (mode !== 'blocks' && mode !== 'bars') return null;
 	if (!isRecord(saved)) return null;
@@ -106,6 +118,21 @@ export function loadPuzzle(): Puzzle | null {
 		for (const [id, text] of Object.entries(savedClues))
 			if (typeof text === 'string') clues[id] = text;
 
+	let carried = isRecord(extra) ? extra : {};
+	let details = {
+		authors: Array.isArray(authors)
+			? authors.filter((a): a is string => typeof a === 'string').slice(0, MAX_AUTHORS)
+			: [],
+		intro: typeof intro === 'string' ? intro : '',
+		notes: typeof notes === 'string' ? notes : ''
+	};
+	if (!Array.isArray(authors)) {
+		details = detailsOf(carried);
+		carried = Object.fromEntries(
+			Object.entries(carried).filter(([name]) => !['author', 'intro', 'notes'].includes(name))
+		);
+	}
+
 	return {
 		rows,
 		cols,
@@ -113,7 +140,8 @@ export function loadPuzzle(): Puzzle | null {
 		grid,
 		clues,
 		title: typeof title === 'string' ? title : '',
-		extra: isRecord(extra) ? extra : {},
+		...details,
+		extra: carried,
 		baseline: isRecord(baseline)
 			? Object.fromEntries(
 					Object.entries(baseline).filter((e): e is [string, string] => typeof e[1] === 'string')
