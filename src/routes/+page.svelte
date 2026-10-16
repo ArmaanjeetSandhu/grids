@@ -673,67 +673,119 @@
 		resetHistory();
 	}
 
-	type Snapshot = {
-		rows: number;
-		cols: number;
-		grid: Grid;
-		clues: Record<string, string>;
-		title: string;
-		authors: string[];
-		intro: string;
-		notes: string;
-	};
+	type GridSnapshot = { grid: Grid };
+	type CluesSnapshot = { clues: Record<string, string> };
+	type DetailsSnapshot = { title: string; authors: string[]; intro: string; notes: string };
 
 	const HISTORY_LIMIT = 500;
-	const past: string[] = [];
-	const future: string[] = [];
-	let present = '';
 
-	function serialize() {
-		if (!size) return '';
-		const snapshot: Snapshot = { ...size, grid, clues, title, authors, intro, notes };
-		return JSON.stringify(snapshot);
+	type History<T> = {
+		reset(): void;
+		commit(): void;
+		travel(forward: boolean): void;
+		map(f: (s: T) => T): void;
+	};
+
+	function createHistory<T>(
+		read: () => T,
+		write: (next: T, prev: T, forward: boolean) => void
+	): History<T> {
+		const past: string[] = [];
+		const future: string[] = [];
+		let present = '';
+		const commit = () => {
+			const next = JSON.stringify(read());
+			if (next === present) return;
+			past.push(present);
+			if (past.length > HISTORY_LIMIT) past.shift();
+			future.length = 0;
+			present = next;
+		};
+		return {
+			reset() {
+				past.length = 0;
+				future.length = 0;
+				present = JSON.stringify(read());
+			},
+			commit,
+			travel(forward) {
+				commit();
+				const [from, to] = forward ? [future, past] : [past, future];
+				const target = from.pop();
+				if (target === undefined) return;
+				to.push(present);
+				const prev: T = JSON.parse(present);
+				present = target;
+				write(JSON.parse(target), prev, forward);
+			},
+			map(f) {
+				for (const stack of [past, future])
+					for (let i = 0; i < stack.length; i++) stack[i] = JSON.stringify(f(JSON.parse(stack[i])));
+				present = JSON.stringify(read());
+			}
+		};
+	}
+
+	const histories = {
+		grid: createHistory<GridSnapshot>(
+			() => ({ grid }),
+			(next, prev, forward) => {
+				grid = next.grid;
+				hoverKey = null;
+				settleCaret(prev.grid, forward);
+			}
+		),
+		clues: createHistory<CluesSnapshot>(
+			() => ({ clues }),
+			(next) => {
+				clues = next.clues;
+			}
+		),
+		details: createHistory<DetailsSnapshot>(
+			() => ({ title, authors, intro, notes }),
+			(next) => {
+				title = next.title;
+				authors = next.authors.length ? next.authors : [''];
+				intro = next.intro;
+				notes = next.notes;
+			}
+		)
+	};
+	type HistoryArea = keyof typeof histories;
+
+	let lastArea: 'grid' | 'panel' | 'details' = 'grid';
+	let clueSheetEl = $state<HTMLElement>();
+	let titleFieldEl = $state<HTMLElement>();
+
+	function noteArea(target: EventTarget | null) {
+		if (!(target instanceof Node)) return;
+		if (titleFieldEl?.contains(target)) lastArea = 'details';
+		else if (clueSheetEl?.contains(target)) lastArea = 'panel';
+		else if (sheet?.contains(target)) lastArea = 'grid';
+	}
+
+	function historyArea(): HistoryArea {
+		return lastArea === 'panel' ? cluePage : lastArea;
 	}
 
 	function resetHistory() {
-		past.length = 0;
-		future.length = 0;
-		present = serialize();
+		lastArea = 'grid';
+		for (const h of Object.values(histories)) h.reset();
 	}
 
 	function commit() {
-		const next = serialize();
-		if (!next || next === present) return;
-		past.push(present);
-		if (past.length > HISTORY_LIMIT) past.shift();
-		future.length = 0;
-		present = next;
+		if (!size) return;
+		for (const h of Object.values(histories)) h.commit();
 	}
 
-	function travel(from: string[], to: string[], forward: boolean) {
+	const undo = () => {
 		commit();
-		const target = from.pop();
-		if (target === undefined) return;
-		to.push(present);
-		restore(target, forward);
-	}
-
-	const undo = () => travel(past, future, false);
-	const redo = () => travel(future, past, true);
-
-	function restore(serialized: string, forward: boolean) {
-		const prev: Snapshot = JSON.parse(present);
-		const next: Snapshot = JSON.parse(serialized);
-		grid = next.grid;
-		clues = next.clues;
-		title = next.title;
-		authors = next.authors;
-		intro = next.intro;
-		notes = next.notes;
-		present = serialized;
-		hoverKey = null;
-		settleCaret(prev.grid, forward);
-	}
+		histories[historyArea()].travel(false);
+	};
+	const redo = () => {
+		commit();
+		histories[historyArea()].travel(true);
+	};
 
 	function settleCaret(prev: Grid, forward: boolean) {
 		if (!editing || !size) return;
@@ -865,42 +917,25 @@
 		}
 	}
 
-	function transposePuzzle<
-		T extends { rows: number; cols: number; grid: Grid; clues: Record<string, string> }
-	>(p: T): T {
-		const flipped = transposeGrid(p.grid, p.rows, p.cols);
-		const moved = transposeReferences(
-			numberEntries(p.rows, p.cols, wallsOf(p.grid)),
-			numberEntries(p.cols, p.rows, wallsOf(flipped))
-		);
-		return {
-			...p,
-			rows: p.cols,
-			cols: p.rows,
-			grid: flipped,
-			clues: Object.fromEntries(
-				Object.entries(p.clues).map(([id, text]) => [
-					transposeEntryId(id),
-					rewriteReferences(text, moved)
-				])
-			)
-		};
-	}
+	type ReferenceMap = ReturnType<typeof transposeReferences>;
 
-	function transposeHistory() {
-		for (const stack of [past, future])
-			for (let i = 0; i < stack.length; i++)
-				stack[i] = JSON.stringify(transposePuzzle(JSON.parse(stack[i]) as Snapshot));
-		present = serialize();
+	function transposeClues(c: Record<string, string>, moved: ReferenceMap) {
+		return Object.fromEntries(
+			Object.entries(c).map(([id, text]) => [transposeEntryId(id), rewriteReferences(text, moved)])
+		);
 	}
 
 	function transpose() {
 		if (!size) return;
 		commit();
 		const { rows, cols } = size;
-		const flipped = transposePuzzle({ rows, cols, grid, clues });
-		grid = flipped.grid;
-		clues = flipped.clues;
+		const flipped = transposeGrid(grid, rows, cols);
+		const moved = transposeReferences(
+			numberEntries(rows, cols, wallsOf(grid)),
+			numberEntries(cols, rows, wallsOf(flipped))
+		);
+		grid = flipped;
+		clues = transposeClues(clues, moved);
 		if (activeClue) activeClue = transposeEntryId(activeClue);
 		if (editing) editing = { ...editing, keys: editing.keys.map(transposeKey) };
 		selection = selection.map(transposeKey);
@@ -911,7 +946,8 @@
 		constraintsOpen = false;
 		sizeInput = { rows: cols, cols: rows };
 		size = { rows: cols, cols: rows };
-		transposeHistory();
+		histories.grid.map((s) => ({ grid: transposeGrid(s.grid, rows, cols) }));
+		histories.clues.map((s) => ({ clues: transposeClues(s.clues, moved) }));
 	}
 
 	function paint(key: string) {
@@ -1142,6 +1178,7 @@
 	}
 
 	function onWindowPointerDown(e: PointerEvent) {
+		noteArea(e.target);
 		if (symmetryOpen && !symmetryEl?.contains(e.target as Node)) symmetryOpen = false;
 		if (constraintsOpen && !constraintsEl?.contains(e.target as Node)) constraintsOpen = false;
 	}
@@ -1252,6 +1289,7 @@
 	bind:innerWidth={winW}
 	onkeydown={onWindowKey}
 	onpointerdown={onWindowPointerDown}
+	onfocusin={(e) => noteArea(e.target)}
 	onpointerup={onWindowPointerUp}
 />
 
@@ -1778,6 +1816,7 @@
 					</div>
 
 					<div
+						bind:this={clueSheetEl}
 						class="clue-sheet"
 						style:width="{panelW}px"
 						style:height="{panelH}px"
@@ -1789,7 +1828,7 @@
 							aria-label={cluePage === 'details' ? 'Puzzle details' : 'Clues'}
 							bind:this={cluesEl}
 						>
-							<div class="title-field">
+							<div class="title-field" bind:this={titleFieldEl}>
 								<input
 									id="puzzle-title"
 									aria-label="Title"
