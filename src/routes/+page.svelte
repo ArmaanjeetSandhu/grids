@@ -3,6 +3,7 @@
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
 	import LegalLinks from '$lib/LegalLinks.svelte';
+	import Modal from '$lib/Modal.svelte';
 	import smirk from '$lib/assets/smirk.svg';
 	import {
 		MAX_SIZE,
@@ -915,20 +916,6 @@
 		confirmNewReturn = null;
 	}
 
-	function trapModalFocus(e: KeyboardEvent) {
-		if (e.key !== 'Tab') return;
-		const focusable = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button');
-		const first = focusable[0];
-		const last = focusable[focusable.length - 1];
-		if (e.shiftKey && document.activeElement === first) {
-			e.preventDefault();
-			last.focus();
-		} else if (!e.shiftKey && document.activeElement === last) {
-			e.preventDefault();
-			first.focus();
-		}
-	}
-
 	type ReferenceMap = ReturnType<typeof transposeReferences>;
 
 	function transposeClues(c: Record<string, string>, moved: ReferenceMap) {
@@ -1297,34 +1284,7 @@
 	}
 
 	function onWindowKey(e: KeyboardEvent) {
-		if (confirmNewOpen) {
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				closeConfirmNew(false);
-			}
-			return;
-		}
-		if (confirmDownloadOpen) {
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				closeConfirmDownload(false);
-			}
-			return;
-		}
-		if (confirmRandomOpen) {
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				closeConfirmRandom(false);
-			}
-			return;
-		}
-		if (randomSetOpen) {
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				closeRandomSet();
-			}
-			return;
-		}
+		if (confirmNewOpen || confirmDownloadOpen || confirmRandomOpen || randomSetOpen) return;
 		const action = size && historyAction(e);
 		if (action) {
 			const t = e.target as HTMLElement | null;
@@ -2124,165 +2084,80 @@
 	{/if}
 
 	{#if confirmNewOpen}
-		<div
-			class="modal-scrim"
-			role="presentation"
-			transition:fade={{ duration: DURATION.quick }}
-			onpointerdown={(e) => {
-				if (e.target === e.currentTarget) closeConfirmNew(false);
-			}}
-		>
-			<div
-				class="modal"
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="confirm-new-title"
-				aria-describedby="confirm-new-desc"
-				tabindex="-1"
-				transition:fly={{ y: 8 }}
-				onkeydown={trapModalFocus}
-			>
-				<h2 id="confirm-new-title">Start a new grid?</h2>
-				<p id="confirm-new-desc">This clears the current puzzle.</p>
-				<div class="modal-actions">
-					<button
-						type="button"
-						class="secondary"
-						onclick={() => closeConfirmNew(false)}
-						{@attach (el) => el.focus()}
-					>
-						Cancel
-					</button>
-					<button type="button" class="primary" onclick={() => closeConfirmNew(true)}>
-						New grid
-					</button>
-				</div>
-			</div>
-		</div>
+		<Modal title="Start a new grid?" onclose={() => closeConfirmNew(false)}>
+			<p>This clears the current puzzle.</p>
+			{#snippet actions()}
+				<button
+					type="button"
+					class="secondary"
+					onclick={() => closeConfirmNew(false)}
+					{@attach (el) => el.focus()}
+				>
+					Cancel
+				</button>
+				<button type="button" class="primary" onclick={() => closeConfirmNew(true)}>
+					New grid
+				</button>
+			{/snippet}
+		</Modal>
 	{/if}
 
 	{#if confirmDownloadOpen}
-		<div
-			class="modal-scrim"
-			role="presentation"
-			transition:fade={{ duration: DURATION.quick }}
-			onpointerdown={(e) => {
-				if (e.target === e.currentTarget) closeConfirmDownload(false);
-			}}
-		>
-			<div
-				class="modal"
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="confirm-download-title"
-				aria-describedby="confirm-download-desc"
-				tabindex="-1"
-				transition:fly={{ y: 8 }}
-				onkeydown={trapModalFocus}
-			>
-				<h2 id="confirm-download-title">Download anyway?</h2>
-				<div id="confirm-download-desc">
-					<p class="issues-lead">This puzzle may not be ready yet:</p>
-					<ul class="issues">
-						{#each confirmDownloadIssues as issue (issue)}
-							<li>{issue}</li>
-						{/each}
-					</ul>
-				</div>
-				<div class="modal-actions">
-					<button
-						type="button"
-						class="secondary"
-						onclick={() => closeConfirmDownload(false)}
-						{@attach (el) => el.focus()}
-					>
-						Cancel
-					</button>
-					<button type="button" class="primary" onclick={() => closeConfirmDownload(true)}>
-						Download
-					</button>
-				</div>
-			</div>
-		</div>
+		<Modal title="Download anyway?" onclose={() => closeConfirmDownload(false)}>
+			<p>This puzzle may not be ready yet:</p>
+			<ul class="issues">
+				{#each confirmDownloadIssues as issue (issue)}
+					<li>{issue}</li>
+				{/each}
+			</ul>
+			{#snippet actions()}
+				<button
+					type="button"
+					class="secondary"
+					onclick={() => closeConfirmDownload(false)}
+					{@attach (el) => el.focus()}
+				>
+					Cancel
+				</button>
+				<button type="button" class="primary" onclick={() => closeConfirmDownload(true)}>
+					Download
+				</button>
+			{/snippet}
+		</Modal>
 	{/if}
 
 	{#if confirmRandomOpen}
-		<div
-			class="modal-scrim"
-			role="presentation"
-			transition:fade={{ duration: DURATION.quick }}
-			onpointerdown={(e) => {
-				if (e.target === e.currentTarget) closeConfirmRandom(false);
-			}}
-		>
-			<div
-				class="modal"
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="confirm-random-title"
-				aria-describedby="confirm-random-desc"
-				tabindex="-1"
-				transition:fly={{ y: 8 }}
-				onkeydown={trapModalFocus}
-			>
-				<h2 id="confirm-random-title">Are you sure?</h2>
-				<p id="confirm-random-desc">
-					This will generate a new grid. Existing {bars ? 'bars' : 'blocks'} will be removed{confirmRandomLetters
-						? ', along with the entered letters'
-						: ''}.
-				</p>
-				<div class="modal-actions">
-					<button
-						type="button"
-						class="secondary"
-						onclick={() => closeConfirmRandom(false)}
-						{@attach (el) => el.focus()}
-					>
-						Cancel
-					</button>
-					<button type="button" class="primary" onclick={() => closeConfirmRandom(true)}>
-						Generate
-					</button>
-				</div>
-			</div>
-		</div>
+		<Modal title="Are you sure?" onclose={() => closeConfirmRandom(false)}>
+			<p>
+				This will generate a new grid. Existing {bars ? 'bars' : 'blocks'} will be removed{confirmRandomLetters
+					? ', along with the entered letters'
+					: ''}.
+			</p>
+			{#snippet actions()}
+				<button
+					type="button"
+					class="secondary"
+					onclick={() => closeConfirmRandom(false)}
+					{@attach (el) => el.focus()}
+				>
+					Cancel
+				</button>
+				<button type="button" class="primary" onclick={() => closeConfirmRandom(true)}>
+					Generate
+				</button>
+			{/snippet}
+		</Modal>
 	{/if}
 
 	{#if randomSetOpen}
-		<div
-			class="modal-scrim"
-			role="presentation"
-			transition:fade={{ duration: DURATION.quick }}
-			onpointerdown={(e) => {
-				if (e.target === e.currentTarget) closeRandomSet();
-			}}
-		>
-			<div
-				class="modal"
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="random-set-title"
-				aria-describedby="random-set-desc"
-				tabindex="-1"
-				transition:fly={{ y: 8 }}
-				onkeydown={trapModalFocus}
-			>
-				<h2 id="random-set-title">The grid is already set</h2>
-				<p id="random-set-desc">
-					No more {bars ? 'bars' : 'blocks'} can be added.
-				</p>
-				<div class="modal-actions single">
-					<button
-						type="button"
-						class="primary"
-						onclick={closeRandomSet}
-						{@attach (el) => el.focus()}
-					>
-						OK
-					</button>
-				</div>
-			</div>
-		</div>
+		<Modal title="The grid is already set" onclose={closeRandomSet}>
+			<p>No more {bars ? 'bars' : 'blocks'} can be added.</p>
+			{#snippet actions()}
+				<button type="button" class="primary" onclick={closeRandomSet} {@attach (el) => el.focus()}>
+					OK
+				</button>
+			{/snippet}
+		</Modal>
 	{/if}
 </main>
 
@@ -2583,59 +2458,9 @@
 		cursor: not-allowed;
 	}
 
-	.modal-scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 100;
-		display: grid;
-		place-items: center;
-		padding: 1rem;
-		background: rgb(0 0 0 / 0.45);
-	}
-	.modal {
-		box-sizing: border-box;
-		width: min(24rem, 100%);
-		padding: 1.75rem 1.75rem 1.5rem;
-		background: var(--paper);
-		color: var(--ink);
-		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
-	}
-	.modal:focus {
-		outline: none;
-	}
-	.modal h2 {
-		margin: 0;
-		font-size: 1.35rem;
-		font-weight: 800;
-		letter-spacing: -0.01em;
-		line-height: 1.15;
-	}
-	.modal p {
-		margin: 0.6rem 0 1.5rem;
-		line-height: 1.5;
-		color: #4a4f4c;
-	}
-	.modal .issues-lead {
-		margin-bottom: 0.4rem;
-	}
-	.modal .issues {
-		margin: 0 0 1.5rem;
+	.issues {
+		margin: 0.4rem 0 0;
 		padding-left: 1.25rem;
-		line-height: 1.5;
-		color: #4a4f4c;
-	}
-	.modal-actions {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-		gap: 0.5rem;
-	}
-	.modal-actions.single {
-		grid-template-columns: minmax(0, 1fr);
-	}
-	.modal-actions .primary,
-	.modal-actions .secondary {
-		padding: 0.6rem 1rem;
-		font-size: 0.9rem;
 	}
 
 	.main {
