@@ -328,7 +328,7 @@ export function constraintStatus(
 	else if (consecutive)
 		status.push({
 			key: 'consecutiveUnches',
-			label: 'Consecutive unches',
+			label: 'Unches',
 			value: tally(consecutive.size)
 		});
 	if (cheaters) status.push({ key: 'cheaters', label: 'Cheaters', value: tally(cheaters.size) });
