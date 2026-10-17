@@ -1236,6 +1236,8 @@
 		noteArea(e.target);
 	}
 
+	const CONTROLS = 'button, input, select, textarea, a[href], [contenteditable], [role]';
+
 	function onWindowKey(e: KeyboardEvent) {
 		if (confirmNewOpen || confirmDownloadOpen || confirmRandomOpen || randomSetOpen) return;
 		const action = size && historyAction(e);
@@ -1257,8 +1259,8 @@
 			return;
 		}
 		if (size === null || bars || statsOpen || e.code !== 'Space') return;
-		const t = e.target as HTMLElement | null;
-		if ((t instanceof HTMLInputElement && t !== input) || t instanceof HTMLTextAreaElement) return;
+		const t = e.target;
+		if (t instanceof Element && t !== input && t.closest(CONTROLS)) return;
 		e.preventDefault();
 		pen = pen === 'white' ? 'black' : 'white';
 	}

@@ -26,6 +26,11 @@
 		['bars', 'Bars']
 	] as const satisfies readonly (readonly [GridMode, string])[];
 
+	function nudge(dim: 'rows' | 'cols', by: number) {
+		const n = Math.round(Number(size[dim]) || 0) + by;
+		size[dim] = Math.min(MAX_SIZE, Math.max(MIN_SIZE, n));
+	}
+
 	let importError = $state('');
 	let importInput = $state<HTMLInputElement>();
 
@@ -71,7 +76,7 @@
 								type="button"
 								class="step"
 								aria-label="Fewer {label.toLowerCase()}"
-								onclick={() => (size[dim] = Math.max(MIN_SIZE, size[dim] - 1))}>−</button
+								onclick={() => nudge(dim, -1)}>−</button
 							>
 							<input
 								id="size-{dim}"
@@ -84,7 +89,7 @@
 								type="button"
 								class="step"
 								aria-label="More {label.toLowerCase()}"
-								onclick={() => (size[dim] = Math.min(MAX_SIZE, size[dim] + 1))}>+</button
+								onclick={() => nudge(dim, 1)}>+</button
 							>
 						</div>
 					</div>
