@@ -2,6 +2,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
+	import LengthHistogram from '$lib/LengthHistogram.svelte';
 	import Modal from '$lib/Modal.svelte';
 	import OptionMenu from '$lib/OptionMenu.svelte';
 	import SetupScreen from '$lib/SetupScreen.svelte';
@@ -46,7 +47,7 @@
 	} from '$lib/constraints';
 	import { createHistory } from '$lib/history';
 	import { MAX_AUTHORS, toIpuz, unchangedSinceImport, type Puzzle } from '$lib/ipuz';
-	import { DURATION, fade, flipDuration, pop } from '$lib/motion';
+	import { DURATION, fade, flipDuration, fly, pop } from '$lib/motion';
 	import {
 		citedReferences,
 		linkedEntries,
@@ -116,6 +117,22 @@
 			down: entries.length - across
 		};
 	});
+
+	const entryLengths = $derived(
+		(numbering?.entries ?? []).map((e) => ({ axis: e.axis, length: e.keys.length }))
+	);
+
+	let statsOpen = $state(false);
+
+	function toggleStats() {
+		if (!statsOpen) {
+			const active = document.activeElement;
+			if (active instanceof HTMLElement && layoutEl?.contains(active)) active.blur();
+			closeEditor();
+			hoverKey = null;
+		}
+		statsOpen = !statsOpen;
+	}
 
 	const BLANK = '·';
 
@@ -590,6 +607,8 @@
 		}
 	});
 	let layoutEl = $state<HTMLDivElement>();
+	let layoutW = $state(0);
+	let layoutH = $state(0);
 	$effect(() => {
 		void [cellDev, dpr, size, winW];
 		const els = [layoutEl, sheet].filter((e): e is HTMLDivElement => !!e);
@@ -664,6 +683,7 @@
 		intro = p.intro;
 		notes = p.notes;
 		cluePage = 'clues';
+		statsOpen = false;
 		extra = p.extra;
 		baseline = p.baseline;
 		pen = 'white';
@@ -1232,7 +1252,11 @@
 			constraintsOpen = false;
 			return;
 		}
-		if (size === null || bars || e.code !== 'Space') return;
+		if (e.key === 'Escape' && statsOpen) {
+			statsOpen = false;
+			return;
+		}
+		if (size === null || bars || statsOpen || e.code !== 'Space') return;
 		const t = e.target as HTMLElement | null;
 		if ((t instanceof HTMLInputElement && t !== input) || t instanceof HTMLTextAreaElement) return;
 		e.preventDefault();
@@ -1434,6 +1458,19 @@
 
 						<button
 							class="chip"
+							class:on={statsOpen}
+							aria-pressed={statsOpen}
+							onclick={toggleStats}
+							title={statsOpen ? 'Back to the grid' : 'Show a histogram of entry lengths'}
+						>
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+								<path d="M2.5 13.5h11M4 13.5v-4M7 13.5V4M10 13.5V7M13 13.5v-2" />
+							</svg>
+							Stats
+						</button>
+
+						<button
+							class="chip"
 							onmousedown={keepFocus}
 							onclick={requestDownload}
 							title="Download the puzzle as IPUZ"
@@ -1448,7 +1485,15 @@
 			</header>
 
 			<div class="stage" bind:clientWidth={stageW} bind:clientHeight={stageH}>
-				<div class="layout" class:narrow bind:this={layoutEl}>
+				<div
+					class="layout"
+					class:narrow
+					class:away={statsOpen}
+					inert={statsOpen}
+					bind:this={layoutEl}
+					bind:clientWidth={layoutW}
+					bind:clientHeight={layoutH}
+				>
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						bind:this={sheet}
@@ -1752,6 +1797,13 @@
 						></button>
 					</div>
 				</div>
+				{#if statsOpen}
+					<div class="stats-view" transition:fly={{ y: 16, duration: DURATION.slow }}>
+						<div class="stats-sheet" style:width="{layoutW}px" style:height="{layoutH}px">
+							<LengthHistogram entries={entryLengths} />
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			{#if stats}
@@ -2023,6 +2075,39 @@
 		flex-direction: column;
 		align-items: center;
 	}
+	.layout {
+		transition:
+			opacity var(--t-base) var(--ease-out),
+			transform var(--t-base) var(--ease-out),
+			visibility 0s;
+	}
+	.layout.away {
+		opacity: 0;
+		transform: translateY(-16px) scale(0.98);
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			opacity var(--t-base) var(--ease-out),
+			transform var(--t-base) var(--ease-out),
+			visibility 0s linear var(--t-base);
+	}
+	.stats-view {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 24px;
+		box-sizing: border-box;
+	}
+	.stats-sheet {
+		max-width: 100%;
+		max-height: 100%;
+	}
+	.chip.on {
+		border-color: var(--rule);
+		color: var(--rule);
+		font-weight: 600;
+	}
 
 	.clue-sheet {
 		--curl: 1.6rem;
@@ -2290,6 +2375,7 @@
 	}
 
 	.stage {
+		position: relative;
 		flex: 1;
 		min-height: 0;
 		display: grid;
