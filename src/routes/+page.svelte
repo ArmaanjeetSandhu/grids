@@ -1032,11 +1032,11 @@
 			editing = null;
 		}
 		if (bars) {
-			openEditor(key, axis);
+			openEditor(key, entryAxis(key, axis));
 			return;
 		}
 		painting = true;
-		if (pen === 'white' && !grid[key].black) openEditor(key, axis);
+		if (pen === 'white' && !grid[key].black) openEditor(key, entryAxis(key, axis));
 		else paint(key);
 	}
 
@@ -1064,6 +1064,14 @@
 		if (!bars && painting && e.buttons & 1) paint(key);
 	}
 
+	function entryAxis(key: string, preferred: Axis): Axis {
+		if (!size) return preferred;
+		const { rows, cols } = size;
+		const other = otherAxis(preferred);
+		const formsEntry = (a: Axis) => entryAt(key, a, walls, rows, cols).length > 1;
+		return !formsEntry(preferred) && formsEntry(other) ? other : preferred;
+	}
+
 	async function openEditor(key: string, a: Axis) {
 		if (!size) return;
 		axis = a;
@@ -1076,9 +1084,12 @@
 	}
 
 	function toggleDirection() {
-		const other = axis === 'across' ? 'down' : 'across';
-		if (editing) openEditor(editing.keys[editing.idx], other);
-		else axis = other;
+		const other = otherAxis(axis);
+		if (editing) {
+			const key = editing.keys[editing.idx];
+			const next = entryAxis(key, other);
+			if (next !== axis) openEditor(key, next);
+		} else axis = other;
 	}
 
 	function closeEditor() {
@@ -1231,21 +1242,6 @@
 	function keepFocus(e: MouseEvent) {
 		e.preventDefault();
 	}
-
-	const ARROWS: Record<Axis, [number, number][]> = {
-		across: [
-			[0.94, 0.5],
-			[0.82, 0.39],
-			[0.82, 0.61]
-		],
-		down: [
-			[0.5, 0.94],
-			[0.39, 0.82],
-			[0.61, 0.82]
-		]
-	};
-	const arrowPoints = (dir: Axis, x: number, y: number) =>
-		ARROWS[dir].map(([a, b]) => `${x + a},${y + b}`).join(' ');
 
 	const REBUS_MARK = 0.28;
 	const rebusPoints = (x: number, y: number) =>
@@ -1596,14 +1592,6 @@
 									onpointerenter={(ev) => onBarEnter(ev, e)}
 								/>
 							{/each}
-
-							{#if caretPos && !multi}
-								<polygon
-									class="arrow"
-									points={arrowPoints(axis, caretPos.col, caretPos.row)}
-									in:fade={{ duration: DURATION.quick }}
-								/>
-							{/if}
 						</svg>
 
 						<input
@@ -2472,12 +2460,6 @@
 	}
 	.grab:hover {
 		fill-opacity: 0.5;
-	}
-
-	.arrow {
-		fill: var(--ink);
-		opacity: 0.55;
-		pointer-events: none;
 	}
 
 	.typer {
