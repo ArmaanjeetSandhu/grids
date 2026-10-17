@@ -1002,7 +1002,8 @@
 		if (editing) {
 			const i = editing.keys.indexOf(key);
 			if (i >= 0 && (bars || pen === 'white')) {
-				editing.idx = editing.anchor = i;
+				if (i === editing.idx) toggleDirection();
+				else editing.idx = editing.anchor = i;
 				return;
 			}
 			editing = null;
@@ -1380,41 +1381,6 @@
 				<div class="row">
 					<div class="tools">
 						<button class="chip quiet" onclick={newGrid}>New grid</button>
-
-						{#if !bars}
-							<button
-								class="pen"
-								onmousedown={keepFocus}
-								onclick={() => (pen = pen === 'white' ? 'black' : 'white')}
-								aria-label="Pen: {pen}. Press space to switch."
-								title="Switch pen (Space)"
-							>
-								<span class="swatch white" class:on={pen === 'white'}></span>
-								<span class="swatch black" class:on={pen === 'black'}></span>
-								<span class="pen-label">{pen === 'white' ? 'White pen' : 'Black pen'}</span>
-								<kbd>Space</kbd>
-							</button>
-						{/if}
-
-						<button
-							class="chip"
-							onmousedown={keepFocus}
-							onclick={toggleDirection}
-							title="Switch typing direction (Enter while typing)"
-						>
-							<svg
-								class="direction"
-								class:down={axis === 'down'}
-								viewBox="0 0 16 16"
-								width="16"
-								height="16"
-								aria-hidden="true"
-							>
-								<path d="M2 8h11M9.5 4.5 13 8l-3.5 3.5" />
-							</svg>
-							{axis === 'across' ? 'Across' : 'Down'}
-							<kbd>⏎</kbd>
-						</button>
 
 						<div class="symmetry" bind:this={symmetryEl}>
 							<button
@@ -2171,7 +2137,6 @@
 	.primary,
 	.secondary,
 	.segment,
-	.pen,
 	.chip,
 	.option,
 	.symmetry-off,
@@ -2186,7 +2151,6 @@
 	.step:active:not(:disabled),
 	.primary:active:not(:disabled),
 	.secondary:active,
-	.pen:active,
 	.chip:active,
 	.symmetry-off:active:not(:disabled),
 	.menu-off:active:not(:disabled) {
@@ -2477,7 +2441,6 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 	}
-	.pen,
 	.chip {
 		height: 2.25rem;
 		display: inline-flex;
@@ -2490,15 +2453,8 @@
 		font-size: 0.875rem;
 		font-weight: 500;
 	}
-	.pen:hover,
 	.chip:hover {
 		background: rgb(0 0 0 / 0.32);
-	}
-	.chip svg.direction {
-		transition: rotate var(--t-base) var(--ease-spring);
-	}
-	.chip svg.direction.down {
-		rotate: 90deg;
 	}
 	.chip svg {
 		fill: none;
@@ -2708,42 +2664,6 @@
 		margin: 0.5rem 0.4rem 0;
 		padding-top: 0.5rem;
 		border-top: 1px solid rgb(255 255 255 / 0.18);
-	}
-
-	.swatch {
-		width: 14px;
-		height: 14px;
-		box-sizing: border-box;
-		border: 1.5px solid var(--on-mat);
-		opacity: 0.45;
-		transition:
-			transform 120ms,
-			opacity 120ms;
-	}
-	.swatch.white {
-		background: #fff;
-	}
-	.swatch.black {
-		background: #000;
-		margin-left: -0.3rem;
-	}
-	.swatch.on {
-		opacity: 1;
-		transform: scale(1.2);
-		outline: 2px solid var(--rule);
-		outline-offset: 1px;
-	}
-	.pen-label {
-		min-width: 4.6rem;
-		text-align: left;
-	}
-	kbd {
-		font: inherit;
-		font-size: 0.72rem;
-		padding: 0.1rem 0.35rem;
-		border: 1px solid rgb(255 255 255 / 0.35);
-		border-radius: 3px;
-		color: var(--on-mat-dim);
 	}
 
 	.layout {
@@ -3288,10 +3208,6 @@
 			right: 0.75rem;
 			width: auto;
 			transform-origin: top center;
-		}
-		.pen-label,
-		kbd {
-			display: none;
 		}
 		.status {
 			padding: var(--status-pad) 0.75rem;
