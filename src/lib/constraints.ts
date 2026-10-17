@@ -31,7 +31,7 @@ export const CONSTRAINTS: readonly Constraint[] = [
 	},
 	{
 		key: 'cheaters',
-		label: 'Cheater squares'
+		label: 'No cheater squares'
 	},
 	{
 		key: 'twoLetters',

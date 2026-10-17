@@ -109,14 +109,16 @@ function toText(html: unknown, lineBreak = ' '): string {
 export function joinAuthors(authors: string[]): string {
 	const names = authors.map((a) => a.trim()).filter(Boolean);
 	if (names.length < 3) return names.join(' and ');
-	return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+	return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
 export function splitAuthors(byline: string): string[] {
 	const text = byline.trim();
 	if (!text) return [];
 	const names = text
-		.split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
+		.replace(/\s+/g, ' ')
+		.split(',')
+		.flatMap((part) => part.trim().replace(/^and /i, '').split(/ and /i))
 		.map((name) => name.trim())
 		.filter(Boolean);
 	return names.length > 0 && names.length <= MAX_AUTHORS ? names : [text];

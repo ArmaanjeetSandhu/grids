@@ -19,6 +19,7 @@
 		numberEntries,
 		otherAxis,
 		parseKey,
+		step,
 		transposeEntryId,
 		transposeGrid,
 		transposeKey,
@@ -63,6 +64,17 @@
 		titled,
 		transposeReferences
 	} from '$lib/references';
+	import {
+		barTarget,
+		blockLimit,
+		brokenRules,
+		hasRules,
+		meanEntryLength,
+		randomBars,
+		randomBlocks,
+		randomRules,
+		type Rules
+	} from '$lib/random';
 	import { clearPuzzle, loadPuzzle, loadSettings, savePuzzle, saveSettings } from '$lib/settings';
 	import {
 		barCounterparts,
@@ -431,8 +443,8 @@
 			notes.push(
 				`${
 					cheaters.size === 1
-						? 'One black square is a cheater'
-						: `${cheaters.size} black squares are cheaters`
+						? 'One block is a cheater square'
+						: `${cheaters.size} blocks are cheater squares`
 				}, smirking ${where}.`
 			);
 		if (twoLetters && twoLetters.length > 0)
@@ -950,6 +962,106 @@
 		histories.clues.map((s) => ({ clues: transposeClues(s.clues, moved) }));
 	}
 
+	let confirmRandomOpen = $state(false);
+	let confirmRandomLetters = $state(false);
+	let randomSetOpen = $state(false);
+	let randomReturn: HTMLElement | null = null;
+
+	const holdRandomReturn = () => {
+		randomReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+	};
+
+	function releaseRandomReturn() {
+		randomReturn?.focus();
+		randomReturn = null;
+	}
+
+	const randomRulesNow = $derived(
+		randomRules(mode, activeSymmetry, activeConstraints, (stats?.black ?? 0) > 0)
+	);
+	const canRandomise = $derived(hasRules(randomRulesNow));
+
+	function requestRandom() {
+		if (!size || !canRandomise) return;
+		symmetryOpen = false;
+		constraintsOpen = false;
+		const rules = randomRulesNow;
+		if (brokenRules(size.rows, size.cols, walls, rules).length === 0)
+			return randomise(rules, false);
+		confirmRandomLetters = cells.some(({ key }) => grid[key].letter !== '');
+		holdRandomReturn();
+		confirmRandomOpen = true;
+	}
+
+	function closeConfirmRandom(confirmed: boolean) {
+		confirmRandomOpen = false;
+		if (confirmed && canRandomise) randomise(randomRulesNow, true);
+		if (!randomSetOpen) releaseRandomReturn();
+	}
+
+	function showRandomSet() {
+		if (!randomReturn) holdRandomReturn();
+		randomSetOpen = true;
+	}
+
+	function closeRandomSet() {
+		randomSetOpen = false;
+		releaseRandomReturn();
+	}
+
+	function randomise(rules: Rules, fresh: boolean) {
+		if (!size) return;
+		const { rows, cols } = size;
+		const next = $state.snapshot(grid) as Grid;
+		if (fresh)
+			for (const sq of Object.values(next)) {
+				sq.black = false;
+				sq.barRight = false;
+				sq.barBottom = false;
+				sq.letter = '';
+				sq.rebus = false;
+			}
+		const ws = wallsOf(next);
+		const lettered = (key: string) => next[key].letter !== '';
+
+		if (bars) {
+			const { lo, hi } = barTarget(rows, cols);
+			const mean = meanEntryLength(rows, cols, ws);
+			if (!fresh && mean <= lo) return showRandomSet();
+			const added = randomBars({
+				rows,
+				cols,
+				walls: ws,
+				rules,
+				target: lo + (Math.min(hi, mean) - lo) * Math.random(),
+				locked: (b) =>
+					lettered(keyOf(b.row, b.col)) && lettered(keyOf(...step(b.row, b.col, b.axis)))
+			});
+			if (added.length === 0 && !fresh) return showRandomSet();
+			for (const b of added) next[keyOf(b.row, b.col)][barField(b.axis)] = true;
+		} else {
+			const limit = blockLimit(rows, cols);
+			const black = Object.values(next).filter((sq) => sq.black).length;
+			if (black >= limit) return showRandomSet();
+			const added = randomBlocks({ rows, cols, walls: ws, rules, limit, locked: lettered });
+			if (added.length === 0 && !fresh) return showRandomSet();
+			for (const k of added) {
+				next[k].black = true;
+				next[k].letter = '';
+				next[k].circled = false;
+				next[k].rebus = false;
+			}
+		}
+
+		commit();
+		grid = next;
+		editing = null;
+		selection = [];
+		hoverKey = null;
+		lastArea = 'grid';
+		commit();
+	}
+
 	function paint(key: string) {
 		if (!size) return;
 		const black = pen === 'black';
@@ -1199,6 +1311,20 @@
 			}
 			return;
 		}
+		if (confirmRandomOpen) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeConfirmRandom(false);
+			}
+			return;
+		}
+		if (randomSetOpen) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeRandomSet();
+			}
+			return;
+		}
 		const action = size && historyAction(e);
 		if (action) {
 			const t = e.target as HTMLElement | null;
@@ -1393,9 +1519,7 @@
 									symmetryOpen = !symmetryOpen;
 									constraintsOpen = false;
 								}}
-								title={bars
-									? 'Mirror bars as you place them'
-									: 'Mirror black squares as you place them'}
+								title={bars ? 'Mirror bars as you place them' : 'Mirror blocks as you place them'}
 							>
 								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 									<path d="M8 1.5v13" stroke-dasharray="2 2.2" />
@@ -1578,6 +1702,25 @@
 								</div>
 							{/if}
 						</div>
+
+						{#if canRandomise}
+							<button
+								class="chip"
+								onmousedown={keepFocus}
+								onclick={requestRandom}
+								title={bars
+									? 'Add bars that follow your symmetry and constraints'
+									: 'Add blocks that follow your symmetry and constraints'}
+							>
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+									<circle class="pip" cx="5.6" cy="5.6" r="1.3" />
+									<circle class="pip" cx="8" cy="8" r="1.3" />
+									<circle class="pip" cx="10.4" cy="10.4" r="1.3" />
+								</svg>
+								Random
+							</button>
+						{/if}
 
 						<button
 							class="chip"
@@ -2062,6 +2205,85 @@
 			</div>
 		</div>
 	{/if}
+
+	{#if confirmRandomOpen}
+		<div
+			class="modal-scrim"
+			role="presentation"
+			transition:fade={{ duration: DURATION.quick }}
+			onpointerdown={(e) => {
+				if (e.target === e.currentTarget) closeConfirmRandom(false);
+			}}
+		>
+			<div
+				class="modal"
+				role="alertdialog"
+				aria-modal="true"
+				aria-labelledby="confirm-random-title"
+				aria-describedby="confirm-random-desc"
+				tabindex="-1"
+				transition:fly={{ y: 8 }}
+				onkeydown={trapModalFocus}
+			>
+				<h2 id="confirm-random-title">Are you sure?</h2>
+				<p id="confirm-random-desc">
+					This will generate a new grid. Existing {bars ? 'bars' : 'blocks'} will be removed{confirmRandomLetters
+						? ', along with the entered letters'
+						: ''}.
+				</p>
+				<div class="modal-actions">
+					<button
+						type="button"
+						class="secondary"
+						onclick={() => closeConfirmRandom(false)}
+						{@attach (el) => el.focus()}
+					>
+						Cancel
+					</button>
+					<button type="button" class="primary" onclick={() => closeConfirmRandom(true)}>
+						Generate
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if randomSetOpen}
+		<div
+			class="modal-scrim"
+			role="presentation"
+			transition:fade={{ duration: DURATION.quick }}
+			onpointerdown={(e) => {
+				if (e.target === e.currentTarget) closeRandomSet();
+			}}
+		>
+			<div
+				class="modal"
+				role="alertdialog"
+				aria-modal="true"
+				aria-labelledby="random-set-title"
+				aria-describedby="random-set-desc"
+				tabindex="-1"
+				transition:fly={{ y: 8 }}
+				onkeydown={trapModalFocus}
+			>
+				<h2 id="random-set-title">The grid is already set</h2>
+				<p id="random-set-desc">
+					No more {bars ? 'bars' : 'blocks'} can be added.
+				</p>
+				<div class="modal-actions single">
+					<button
+						type="button"
+						class="primary"
+						onclick={closeRandomSet}
+						{@attach (el) => el.focus()}
+					>
+						OK
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -2407,6 +2629,9 @@
 		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		gap: 0.5rem;
 	}
+	.modal-actions.single {
+		grid-template-columns: minmax(0, 1fr);
+	}
 	.modal-actions .primary,
 	.modal-actions .secondary {
 		padding: 0.6rem 1rem;
@@ -2462,6 +2687,10 @@
 		stroke-width: 1.6;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	.chip svg .pip {
+		fill: currentColor;
+		stroke: none;
 	}
 	.quiet {
 		background: transparent;
