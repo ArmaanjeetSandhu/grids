@@ -3,6 +3,7 @@
 	import { flip } from 'svelte/animate';
 	import Halftone from '$lib/Halftone.svelte';
 	import Modal from '$lib/Modal.svelte';
+	import OptionMenu from '$lib/OptionMenu.svelte';
 	import SetupScreen from '$lib/SetupScreen.svelte';
 	import smirk from '$lib/assets/smirk.svg';
 	import {
@@ -44,17 +45,7 @@
 	} from '$lib/constraints';
 	import { createHistory } from '$lib/history';
 	import { MAX_AUTHORS, toIpuz, unchangedSinceImport, type Puzzle } from '$lib/ipuz';
-	import {
-		DURATION,
-		bloom,
-		dropdown,
-		fade,
-		flipDuration,
-		pop,
-		rise,
-		slide,
-		smoothWidth
-	} from '$lib/motion';
+	import { DURATION, bloom, fade, flipDuration, pop, rise } from '$lib/motion';
 	import {
 		citedReferences,
 		linkedEntries,
@@ -318,7 +309,6 @@
 
 	let chosenSymmetry = $state<SymmetryKey[]>([]);
 	let symmetryOpen = $state(false);
-	let symmetryEl = $state<HTMLDivElement>();
 
 	const symmetry = $derived(size ? symmetryOptions(chosenSymmetry, size.rows, size.cols) : []);
 	const activeSymmetry = $derived(symmetry.filter((s) => s.checked).map((s) => s.key));
@@ -329,8 +319,9 @@
 			: null
 	);
 
-	function toggleSymmetry(option: SymmetryOption) {
-		if (!option.available || option.impliedBy) return;
+	function toggleSymmetry(key: SymmetryKey) {
+		const option = symmetry.find((s) => s.key === key);
+		if (!option || !option.available || option.impliedBy) return;
 		chosenSymmetry = chosenSymmetry.includes(option.key)
 			? chosenSymmetry.filter((k) => k !== option.key)
 			: [...chosenSymmetry, option.key];
@@ -343,9 +334,20 @@
 		return `Implied by ${names.join(' + ')}`;
 	}
 
+	const symmetryItems = $derived(
+		symmetry.map((s) => ({
+			key: s.key,
+			label: s.label,
+			checked: s.checked,
+			disabled: !s.available || s.impliedBy !== null,
+			locked: s.impliedBy !== null,
+			unavailable: !s.available,
+			hint: symmetryHint(s)
+		}))
+	);
+
 	let chosenConstraints = $state<ConstraintKey[]>([]);
 	let constraintsOpen = $state(false);
-	let constraintsEl = $state<HTMLDivElement>();
 
 	let settingsRestored = $state(false);
 
@@ -459,6 +461,20 @@
 		...(symmetric !== null ? (['symmetry'] as const) : []),
 		...(constraintStats.length > 0 ? (['constraints'] as const) : [])
 	]);
+
+	const constraintItems = $derived(
+		offeredConstraints.map((c) => {
+			const implier = impliedBy(c.key, chosenConstraints);
+			return {
+				key: c.key,
+				label: c.label,
+				checked: activeConstraints.includes(c.key),
+				disabled: implier !== null,
+				locked: implier !== null,
+				hint: implier ? `Implied by ${implier.label.toLowerCase()}` : ''
+			};
+		})
+	);
 
 	function toggleConstraint(key: ConstraintKey) {
 		if (impliedBy(key, chosenConstraints)) return;
@@ -1194,8 +1210,6 @@
 
 	function onWindowPointerDown(e: PointerEvent) {
 		noteArea(e.target);
-		if (symmetryOpen && !symmetryEl?.contains(e.target as Node)) symmetryOpen = false;
-		if (constraintsOpen && !constraintsEl?.contains(e.target as Node)) constraintsOpen = false;
 	}
 
 	function onWindowKey(e: KeyboardEvent) {
@@ -1306,200 +1320,95 @@
 					<div class="tools">
 						<button class="chip quiet" onclick={newGrid}>New grid</button>
 
-						<div class="symmetry" bind:this={symmetryEl}>
-							<button
-								class="chip"
-								class:on={activeSymmetry.length > 0}
-								aria-haspopup="true"
-								aria-expanded={symmetryOpen}
-								onmousedown={keepFocus}
-								onclick={() => {
-									symmetryOpen = !symmetryOpen;
-									constraintsOpen = false;
-								}}
-								title={bars ? 'Mirror bars as you place them' : 'Mirror blocks as you place them'}
-							>
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-									<path d="M8 1.5v13" stroke-dasharray="2 2.2" />
-									<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3" />
-								</svg>
-								Symmetry
-								<span class="symmetry-name swap sized" {@attach smoothWidth}>
-									{#key symmetryName}
-										<span in:rise>{symmetryName}</span>
-									{/key}
-								</span>
-							</button>
+						<OptionMenu
+							label="Symmetry"
+							value={symmetryName}
+							on={activeSymmetry.length > 0}
+							title={bars ? 'Mirror bars as you place them' : 'Mirror blocks as you place them'}
+							intro="{bars
+								? 'Bars you add or remove are mirrored as you go.'
+								: 'Squares you blacken or clear are mirrored as you go.'} Nothing already in the grid changes when you switch this on or off."
+							options={symmetryItems}
+							offLabel="Turn symmetry off"
+							offDisabled={activeSymmetry.length === 0}
+							open={symmetryOpen}
+							ontoggle={() => {
+								symmetryOpen = !symmetryOpen;
+								constraintsOpen = false;
+							}}
+							onclose={() => (symmetryOpen = false)}
+							onchange={toggleSymmetry}
+							onoff={() => (chosenSymmetry = [])}
+						>
+							{#snippet icon()}
+								<path d="M8 1.5v13" stroke-dasharray="2 2.2" />
+								<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3" />
+							{/snippet}
+							{#snippet glyph(key)}
+								{#if key === 'rot180'}
+									<path d="M8 3a5 5 0 0 1 0 10M10.2 10.8 8 13l2.2 2.2" />
+									<circle cx="8" cy="8" r="1" />
+								{:else if key === 'rot90'}
+									<path d="M8 3a5 5 0 0 1 5 5M10.8 5.8 13 8l2.2-2.2" />
+									<circle cx="8" cy="8" r="1" />
+								{:else}
+									<rect x="3" y="3" width="10" height="10" />
+									<path
+										class="axis"
+										d={{
+											vertical: 'M8 1v14',
+											horizontal: 'M1 8h14',
+											diagonal: 'M1.5 1.5l13 13',
+											antidiagonal: 'M14.5 1.5l-13 13'
+										}[key]}
+									/>
+								{/if}
+							{/snippet}
+						</OptionMenu>
 
-							{#if symmetryOpen}
-								<div
-									class="symmetry-menu"
-									role="group"
-									aria-label="Symmetry"
-									in:dropdown
-									out:dropdown={{ duration: 160 }}
-								>
-									<p>
-										{bars
-											? 'Bars you add or remove are mirrored as you go.'
-											: 'Squares you blacken or clear are mirrored as you go.'} Nothing already in the
-										grid changes when you switch this on or off.
-									</p>
-									{#each symmetry as s (s.key)}
-										{@const hint = symmetryHint(s)}
-										<label
-											class="option"
-											class:locked={s.impliedBy !== null}
-											class:unavailable={!s.available}
-										>
-											<input
-												type="checkbox"
-												checked={s.checked}
-												disabled={!s.available || s.impliedBy !== null}
-												onchange={() => toggleSymmetry(s)}
-											/>
-											<svg
-												class="glyph"
-												viewBox="0 0 16 16"
-												width="16"
-												height="16"
-												aria-hidden="true"
-											>
-												{#if s.key === 'rot180'}
-													<path d="M8 3a5 5 0 0 1 0 10M10.2 10.8 8 13l2.2 2.2" />
-													<circle cx="8" cy="8" r="1" />
-												{:else if s.key === 'rot90'}
-													<path d="M8 3a5 5 0 0 1 5 5M10.8 5.8 13 8l2.2-2.2" />
-													<circle cx="8" cy="8" r="1" />
-												{:else}
-													<rect x="3" y="3" width="10" height="10" />
-													<path
-														class="axis"
-														d={{
-															vertical: 'M8 1v14',
-															horizontal: 'M1 8h14',
-															diagonal: 'M1.5 1.5l13 13',
-															antidiagonal: 'M14.5 1.5l-13 13'
-														}[s.key]}
-													/>
-												{/if}
-											</svg>
-											<span class="option-text">
-												<span class="option-label">{s.label}</span>
-												{#if hint}
-													<span class="option-hint" transition:slide={{ duration: DURATION.quick }}>
-														{hint}
-													</span>
-												{/if}
-											</span>
-										</label>
-									{/each}
-									<button
-										class="symmetry-off"
-										disabled={activeSymmetry.length === 0}
-										onclick={() => (chosenSymmetry = [])}
-									>
-										Turn symmetry off
-									</button>
-								</div>
-							{/if}
-						</div>
-
-						<div class="menu constraints" bind:this={constraintsEl}>
-							<button
-								class="chip"
-								class:on={chosenConstraints.length > 0}
-								aria-haspopup="true"
-								aria-expanded={constraintsOpen}
-								onmousedown={keepFocus}
-								onclick={() => {
-									constraintsOpen = !constraintsOpen;
-									symmetryOpen = false;
-								}}
-								title="Check the grid against construction rules"
-							>
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-									<rect x="2.5" y="2.5" width="11" height="11" />
-									<path d="M2.5 8h11M8 2.5v11" />
-								</svg>
-								Constraints
-								<span class="menu-name swap sized" {@attach smoothWidth}>
-									{#key constraintsName}
-										<span in:rise>{constraintsName}</span>
-									{/key}
-								</span>
-							</button>
-
-							{#if constraintsOpen}
-								<div
-									class="menu-panel"
-									role="group"
-									aria-label="Constraints"
-									in:dropdown
-									out:dropdown={{ duration: 160 }}
-								>
-									<p>
-										Constraints only flag what they find. Nothing in the grid is changed for you.
-									</p>
-									{#each offeredConstraints as c (c.key)}
-										{@const implier = impliedBy(c.key, chosenConstraints)}
-										<label class="option" class:locked={implier !== null}>
-											<input
-												type="checkbox"
-												checked={activeConstraints.includes(c.key)}
-												disabled={implier !== null}
-												onchange={() => toggleConstraint(c.key)}
-											/>
-											<svg
-												class="glyph"
-												viewBox="0 0 16 16"
-												width="16"
-												height="16"
-												aria-hidden="true"
-											>
-												{#if c.key === 'interlock'}
-													<path d="M3 6.5h6.5V13" />
-													<path class="axis" d="M6.5 3v6.5H13" />
-												{:else if c.key === 'cheaters'}
-													<rect x="3" y="3" width="10" height="10" />
-													<path class="axis" d="M5.5 9.3q3 1.6 5-1.3" />
-												{:else if c.key === 'twoLetters'}
-													<rect x="2" y="5" width="12" height="6" />
-													<path class="axis" d="M8 5v6" />
-												{:else if c.key === 'consecutiveUnches'}
-													<rect x="1.5" y="5" width="6.5" height="6" />
-													<rect x="8" y="5" width="6.5" height="6" />
-													<path class="axis" d="M1.5 8h13" />
-												{:else}
-													<rect x="3" y="3" width="10" height="10" />
-													<path class="axis" d="M3 8h10" />
-												{/if}
-											</svg>
-											<span class="option-text">
-												<span class="option-label">{c.label}</span>
-												{#if implier}
-													<span class="option-hint" transition:slide={{ duration: DURATION.quick }}>
-														Implied by {implier.label.toLowerCase()}
-													</span>
-												{/if}
-											</span>
-										</label>
-									{/each}
-									{#if constraintNote}
-										<p class="menu-note" role="status" transition:slide>
-											{constraintNote}
-										</p>
-									{/if}
-									<button
-										class="menu-off"
-										disabled={chosenConstraints.length === 0}
-										onclick={() => (chosenConstraints = [])}
-									>
-										Turn constraints off
-									</button>
-								</div>
-							{/if}
-						</div>
+						<OptionMenu
+							label="Constraints"
+							value={constraintsName}
+							on={chosenConstraints.length > 0}
+							title="Check the grid against construction rules"
+							intro="Constraints only flag what they find. Nothing in the grid is changed for you."
+							options={constraintItems}
+							note={constraintNote}
+							offLabel="Turn constraints off"
+							offDisabled={chosenConstraints.length === 0}
+							open={constraintsOpen}
+							ontoggle={() => {
+								constraintsOpen = !constraintsOpen;
+								symmetryOpen = false;
+							}}
+							onclose={() => (constraintsOpen = false)}
+							onchange={toggleConstraint}
+							onoff={() => (chosenConstraints = [])}
+						>
+							{#snippet icon()}
+								<rect x="2.5" y="2.5" width="11" height="11" />
+								<path d="M2.5 8h11M8 2.5v11" />
+							{/snippet}
+							{#snippet glyph(key)}
+								{#if key === 'interlock'}
+									<path d="M3 6.5h6.5V13" />
+									<path class="axis" d="M6.5 3v6.5H13" />
+								{:else if key === 'cheaters'}
+									<rect x="3" y="3" width="10" height="10" />
+									<path class="axis" d="M5.5 9.3q3 1.6 5-1.3" />
+								{:else if key === 'twoLetters'}
+									<rect x="2" y="5" width="12" height="6" />
+									<path class="axis" d="M8 5v6" />
+								{:else if key === 'consecutiveUnches'}
+									<rect x="1.5" y="5" width="6.5" height="6" />
+									<rect x="8" y="5" width="6.5" height="6" />
+									<path class="axis" d="M1.5 8h13" />
+								{:else}
+									<rect x="3" y="3" width="10" height="10" />
+									<path class="axis" d="M3 8h10" />
+								{/if}
+							{/snippet}
+						</OptionMenu>
 
 						{#if canRandomise}
 							<button
@@ -2064,10 +1973,7 @@
 	}
 	:global(.mat .primary),
 	:global(.mat .secondary),
-	.chip,
-	.option,
-	.symmetry-off,
-	.menu-off {
+	:global(.mat .chip) {
 		transition:
 			background-color var(--t-quick) var(--ease-out),
 			color var(--t-quick) var(--ease-out),
@@ -2077,9 +1983,7 @@
 	}
 	:global(.mat .primary:active:not(:disabled)),
 	:global(.mat .secondary:active),
-	.chip:active,
-	.symmetry-off:active:not(:disabled),
-	.menu-off:active:not(:disabled) {
+	:global(.mat .chip:active) {
 		transform: scale(0.97);
 	}
 	:global(.mat button:focus-visible),
@@ -2150,7 +2054,7 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 	}
-	.chip {
+	:global(.mat .chip) {
 		height: 2.25rem;
 		display: inline-flex;
 		align-items: center;
@@ -2162,10 +2066,10 @@
 		font-size: 0.875rem;
 		font-weight: 500;
 	}
-	.chip:hover {
+	:global(.mat .chip:hover) {
 		background: rgb(0 0 0 / 0.32);
 	}
-	.chip svg {
+	:global(.mat .chip svg) {
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.6;
@@ -2180,203 +2084,8 @@
 		background: transparent;
 	}
 
-	.symmetry,
-	.menu {
-		position: relative;
-		display: inline-flex;
-	}
-	.symmetry-name,
-	.menu-name {
-		color: var(--on-mat-dim);
-		transition: color var(--t-base) var(--ease-out);
-	}
 	.swap > span {
 		display: inline-block;
-	}
-	.swap.sized {
-		display: inline-block;
-		white-space: nowrap;
-		overflow-x: clip;
-		overflow-y: visible;
-		transition: width 280ms var(--ease-out);
-	}
-	.chip.on .symmetry-name,
-	.chip.on .menu-name {
-		color: var(--rule);
-		font-weight: 600;
-	}
-	.symmetry-menu,
-	.menu-panel {
-		position: absolute;
-		z-index: 10;
-		top: calc(100% + 6px);
-		right: 0;
-		width: 18rem;
-		box-sizing: border-box;
-		padding: 0.75rem;
-		background: color-mix(in srgb, var(--mat) 55%, #000);
-		border: 1px solid rgb(255 255 255 / 0.28);
-		border-radius: 4px;
-		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
-	}
-	.symmetry-menu,
-	.menu-panel {
-		transform-origin: top right;
-	}
-	.symmetry-menu > *,
-	.menu-panel > * {
-		animation: menu-item 360ms var(--ease-out) both;
-	}
-	.symmetry-menu > :nth-child(2),
-	.menu-panel > :nth-child(2) {
-		animation-delay: 25ms;
-	}
-	.symmetry-menu > :nth-child(3),
-	.menu-panel > :nth-child(3) {
-		animation-delay: 45ms;
-	}
-	.symmetry-menu > :nth-child(4),
-	.menu-panel > :nth-child(4) {
-		animation-delay: 65ms;
-	}
-	.symmetry-menu > :nth-child(5),
-	.menu-panel > :nth-child(5) {
-		animation-delay: 85ms;
-	}
-	.symmetry-menu > :nth-child(6),
-	.menu-panel > :nth-child(6) {
-		animation-delay: 105ms;
-	}
-	.symmetry-menu > :nth-child(n + 7),
-	.menu-panel > :nth-child(n + 7) {
-		animation-delay: 125ms;
-	}
-	@keyframes menu-item {
-		from {
-			opacity: 0;
-			transform: translateY(-4px);
-		}
-	}
-	.symmetry-menu p,
-	.menu-panel p {
-		margin: 0 0.4rem 0.5rem;
-		font-size: 0.78rem;
-		line-height: 1.4;
-		color: var(--on-mat-dim);
-	}
-	.option {
-		display: grid;
-		grid-template-columns: 1rem 1rem 1fr;
-		align-items: center;
-		column-gap: 0.6rem;
-		min-height: 2.4rem;
-		padding: 0 0.4rem;
-		border-radius: 4px;
-		font-size: 0.875rem;
-		cursor: pointer;
-	}
-	.option:hover {
-		background: rgb(255 255 255 / 0.08);
-	}
-	.option.locked,
-	.option.unavailable {
-		cursor: not-allowed;
-		background: none;
-	}
-	.option input {
-		appearance: none;
-		width: 1rem;
-		height: 1rem;
-		margin: 0;
-		box-sizing: border-box;
-		display: grid;
-		place-content: center;
-		border: 1.5px solid var(--on-mat);
-		border-radius: 2px;
-		background: transparent;
-		cursor: inherit;
-		transition:
-			background-color var(--t-quick) var(--ease-out),
-			border-color var(--t-quick) var(--ease-out);
-	}
-	.option input::before {
-		content: '';
-		width: 0.6rem;
-		height: 0.6rem;
-		background: var(--ink);
-		clip-path: polygon(13% 52%, 0 66%, 38% 100%, 100% 22%, 86% 9%, 37% 70%);
-		scale: 0;
-		transition: scale var(--t-base) var(--ease-spring);
-	}
-	.option input:checked {
-		background: var(--rule);
-		border-color: var(--rule);
-	}
-	.option input:checked::before {
-		scale: 1;
-	}
-	.option.locked input {
-		opacity: 0.5;
-	}
-	.option.unavailable input,
-	.option.unavailable .glyph,
-	.option.unavailable .option-label {
-		opacity: 0.4;
-	}
-	.glyph {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.4;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-	.glyph rect {
-		opacity: 0.5;
-	}
-	.glyph circle {
-		fill: currentColor;
-		stroke: none;
-	}
-	.glyph .axis {
-		stroke: var(--rule);
-	}
-	.option-text {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.1rem;
-		line-height: 1.2;
-	}
-	.option-hint {
-		font-size: 0.72rem;
-		color: var(--on-mat-dim);
-	}
-	.symmetry-off,
-	.menu-off {
-		width: 100%;
-		height: 2rem;
-		margin-top: 0.5rem;
-		border: 1px solid rgb(255 255 255 / 0.28);
-		border-radius: 4px;
-		background: transparent;
-		font-size: 0.8rem;
-		font-weight: 500;
-	}
-	.symmetry-off:hover,
-	.menu-off:hover {
-		background: rgb(255 255 255 / 0.08);
-	}
-	.symmetry-off:disabled,
-	.menu-off:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-		background: transparent;
-	}
-
-	.menu-panel p.menu-note {
-		margin: 0.5rem 0.4rem 0;
-		padding-top: 0.5rem;
-		border-top: 1px solid rgb(255 255 255 / 0.18);
 	}
 
 	.layout {
@@ -2910,18 +2619,6 @@
 			position: relative;
 			padding: 0.75rem 0.75rem 0.25rem;
 		}
-		.symmetry,
-		.menu {
-			position: static;
-		}
-		.symmetry-menu,
-		.menu-panel {
-			top: 100%;
-			left: 0.75rem;
-			right: 0.75rem;
-			width: auto;
-			transform-origin: top center;
-		}
 		.status {
 			padding: var(--status-pad) 0.75rem;
 			font-size: 0.72rem;
@@ -2936,10 +2633,6 @@
 		.mat :global(*),
 		.mat :global(*::before) {
 			transition-duration: 0s !important;
-		}
-		.symmetry-menu > *,
-		.menu-panel > * {
-			animation: none;
 		}
 	}
 </style>
