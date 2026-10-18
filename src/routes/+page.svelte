@@ -188,9 +188,11 @@
 		document.getElementById(`puzzle-author-${Math.min(i, authors.length - 1)}`)?.focus();
 	}
 
+	const isComposingKey = (e: KeyboardEvent) => e.isComposing || e.keyCode === 229;
+
 	function blurOn(keys: string[]) {
 		return (e: KeyboardEvent & { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
-			if (!keys.includes(e.key)) return;
+			if (isComposingKey(e) || !keys.includes(e.key)) return;
 			e.preventDefault();
 			e.currentTarget.blur();
 		};
@@ -590,7 +592,7 @@
 	let layoutW = $state(0);
 	let layoutH = $state(0);
 	$effect(() => {
-		void [cellDev, dpr, size, winW];
+		void dpr;
 		const els = [layoutEl, sheet].filter((e): e is HTMLDivElement => !!e);
 		if (!els.length) return;
 		let frame = 0;
@@ -1146,7 +1148,7 @@
 	}
 
 	function onInputKey(e: KeyboardEvent) {
-		if (!editing) return;
+		if (!editing || composing || isComposingKey(e)) return;
 		if (e.code === 'KeyC' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			e.preventDefault();
 			toggleCircles();
@@ -1181,11 +1183,22 @@
 		commit();
 	}
 
-	function onInput(e: Event) {
-		const el = e.currentTarget as HTMLInputElement;
+	let composing = false;
+
+	function consumeTyped(el: HTMLInputElement) {
 		for (const ch of el.value) if (typeable(ch)) typeLetter(ch);
 		el.value = '';
 		commit();
+	}
+
+	function onInput(e: Event) {
+		if (composing || (e as InputEvent).isComposing) return;
+		consumeTyped(e.currentTarget as HTMLInputElement);
+	}
+
+	function onCompositionEnd(e: CompositionEvent) {
+		composing = false;
+		consumeTyped(e.currentTarget as HTMLInputElement);
 	}
 
 	function onWindowPointerUp() {
@@ -1212,6 +1225,7 @@
 	const CONTROLS = 'button, input, select, textarea, a[href], [contenteditable], [role]';
 
 	function onWindowKey(e: KeyboardEvent) {
+		if (isComposingKey(e)) return;
 		if (confirmNewOpen || confirmDownloadOpen || confirmRandomOpen || randomSetOpen) return;
 		const action = size && historyAction(e);
 		if (action) {
@@ -1632,7 +1646,12 @@
 							tabindex={editing ? 0 : -1}
 							onkeydown={onInputKey}
 							oninput={onInput}
-							onblur={closeEditor}
+							oncompositionstart={() => (composing = true)}
+							oncompositionend={onCompositionEnd}
+							onblur={() => {
+								composing = false;
+								closeEditor();
+							}}
 						/>
 					</div>
 
@@ -1752,12 +1771,7 @@
 																if (activeClue === c.id) activeClue = null;
 																commit();
 															}}
-															onkeydown={(e) => {
-																if (e.key === 'Enter' || e.key === 'Escape') {
-																	e.preventDefault();
-																	e.currentTarget.blur();
-																}
-															}}></textarea>
+															onkeydown={blurOn(['Enter', 'Escape'])}></textarea>
 														<span class="answer">{c.word} ({c.word.length})</span>
 													</li>
 												{/each}
