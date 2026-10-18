@@ -1154,6 +1154,17 @@
 		}
 	}
 
+	function selectionFocus(keys: string[], idx: number): number {
+		if (selection.length === 0) return idx;
+		const indices = selection.map((k) => keys.indexOf(k)).sort((a, b) => a - b);
+		const lo = indices[0];
+		const hi = indices[indices.length - 1];
+		if (lo < 0 || hi - lo + 1 !== indices.length) return idx;
+		if (lo === idx) return hi;
+		if (hi === idx) return lo;
+		return idx;
+	}
+
 	function onInputKey(e: KeyboardEvent) {
 		if (!editing || composing || isComposingKey(e)) return;
 		if (e.code === 'KeyC' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1180,9 +1191,16 @@
 			const [back, ahead] =
 				axis === 'across' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
 			if (e.key !== back && e.key !== ahead) return;
-			selection = [];
-			const n = editing.keys.length;
-			editing.idx = editing.anchor = (editing.idx + (e.key === back ? n - 1 : 1)) % n;
+			if (e.shiftKey) {
+				const { keys, idx } = editing;
+				const focus = selectionFocus(keys, idx);
+				const next = Math.max(0, Math.min(keys.length - 1, focus + (e.key === back ? -1 : 1)));
+				selection = next === idx ? [] : keys.slice(Math.min(idx, next), Math.max(idx, next) + 1);
+			} else {
+				selection = [];
+				const n = editing.keys.length;
+				editing.idx = editing.anchor = (editing.idx + (e.key === back ? n - 1 : 1)) % n;
+			}
 		} else if (e.key === 'Home' || e.key === 'End') {
 			e.preventDefault();
 			const home = e.key === 'Home';
