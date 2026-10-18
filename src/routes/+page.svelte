@@ -297,22 +297,17 @@
 
 	let confirmDownloadOpen = $state(false);
 	let confirmDownloadIssues = $state<string[]>([]);
-	let confirmDownloadReturn: HTMLElement | null = null;
 
 	function requestDownload() {
 		const issues = downloadIssues();
 		if (issues.length === 0) return download();
 		confirmDownloadIssues = issues;
-		confirmDownloadReturn =
-			document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		confirmDownloadOpen = true;
 	}
 
 	function closeConfirmDownload(confirmed: boolean) {
 		confirmDownloadOpen = false;
 		if (confirmed) download();
-		confirmDownloadReturn?.focus();
-		confirmDownloadReturn = null;
 	}
 
 	let pen = $state<Pen>('white');
@@ -367,7 +362,6 @@
 	let settingsRestored = $state(false);
 
 	let confirmNewOpen = $state(false);
-	let confirmNewReturn: HTMLElement | null = null;
 
 	onMount(() => {
 		const saved = loadSettings();
@@ -825,8 +819,6 @@
 			intro.trim() !== '' ||
 			notes.trim() !== '';
 		if (used) {
-			confirmNewReturn =
-				document.activeElement instanceof HTMLElement ? document.activeElement : null;
 			confirmNewOpen = true;
 			return;
 		}
@@ -842,8 +834,6 @@
 	function closeConfirmNew(confirmed: boolean) {
 		confirmNewOpen = false;
 		if (confirmed) startNewGrid();
-		else confirmNewReturn?.focus();
-		confirmNewReturn = null;
 	}
 
 	type ReferenceMap = ReturnType<typeof transposeReferences>;
@@ -882,16 +872,6 @@
 	let confirmRandomOpen = $state(false);
 	let confirmRandomLetters = $state(false);
 	let randomSetOpen = $state(false);
-	let randomReturn: HTMLElement | null = null;
-
-	const holdRandomReturn = () => {
-		randomReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-	};
-
-	function releaseRandomReturn() {
-		randomReturn?.focus();
-		randomReturn = null;
-	}
 
 	const randomRulesNow = $derived(
 		randomRules(mode, activeSymmetry, activeConstraints, (stats?.black ?? 0) > 0)
@@ -906,24 +886,20 @@
 		if (brokenRules(size.rows, size.cols, walls, rules).length === 0)
 			return randomise(rules, false);
 		confirmRandomLetters = cells.some(({ key }) => grid[key].letter !== '');
-		holdRandomReturn();
 		confirmRandomOpen = true;
 	}
 
 	function closeConfirmRandom(confirmed: boolean) {
 		confirmRandomOpen = false;
 		if (confirmed && canRandomise) randomise(randomRulesNow, true);
-		if (!randomSetOpen) releaseRandomReturn();
 	}
 
 	function showRandomSet() {
-		if (!randomReturn) holdRandomReturn();
 		randomSetOpen = true;
 	}
 
 	function closeRandomSet() {
 		randomSetOpen = false;
-		releaseRandomReturn();
 	}
 
 	function randomise(rules: Rules, fresh: boolean) {

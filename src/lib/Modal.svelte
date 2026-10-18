@@ -16,44 +16,44 @@
 
 	const id = $props.id();
 
-	function onkeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			onclose();
-			return;
-		}
-		if (e.key !== 'Tab') return;
-		const focusable = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button');
-		const first = focusable[0];
-		const last = focusable[focusable.length - 1];
-		if (e.shiftKey && document.activeElement === first) {
-			e.preventDefault();
-			last.focus();
-		} else if (!e.shiftKey && document.activeElement === last) {
-			e.preventDefault();
-			first.focus();
-		}
+	function open(dialog: HTMLDialogElement) {
+		dialog.showModal();
+	}
+
+	function leave(node: HTMLDialogElement) {
+		node.dataset.leaving = '';
+		if (node.open) node.close();
+		return fade(node, { duration: DURATION.quick });
+	}
+
+	function oncancel(e: Event) {
+		e.preventDefault();
+		onclose();
+	}
+
+	function onDialogClose(e: Event) {
+		if (!(e.currentTarget as HTMLDialogElement).hasAttribute('data-leaving')) onclose();
+	}
+
+	function onpointerdown(e: PointerEvent) {
+		if (e.target !== e.currentTarget) return;
+		e.preventDefault();
+		onclose();
 	}
 </script>
 
-<div
-	class="scrim"
-	role="presentation"
-	transition:fade={{ duration: DURATION.quick }}
-	onpointerdown={(e) => {
-		if (e.target === e.currentTarget) onclose();
-	}}
+<dialog
+	role="alertdialog"
+	aria-labelledby="{id}-title"
+	aria-describedby="{id}-desc"
+	{@attach open}
+	in:fade={{ duration: DURATION.quick }}
+	out:leave
+	{oncancel}
+	onclose={onDialogClose}
+	{onpointerdown}
 >
-	<div
-		class="modal"
-		role="alertdialog"
-		aria-modal="true"
-		aria-labelledby="{id}-title"
-		aria-describedby="{id}-desc"
-		tabindex="-1"
-		transition:fly={{ y: 8 }}
-		{onkeydown}
-	>
+	<div class="modal" transition:fly={{ y: 8 }}>
 		<h2 id="{id}-title">{title}</h2>
 		<div class="body" id="{id}-desc">
 			{@render children()}
@@ -62,17 +62,34 @@
 			{@render actions()}
 		</div>
 	</div>
-</div>
+</dialog>
 
 <style>
-	.scrim {
+	dialog {
 		position: fixed;
 		inset: 0;
 		z-index: 100;
-		display: grid;
-		place-items: center;
+		box-sizing: border-box;
+		width: 100%;
+		height: 100%;
+		max-width: none;
+		max-height: none;
+		margin: 0;
 		padding: 1rem;
+		border: 0;
+		place-items: center;
 		background: rgb(0 0 0 / 0.45);
+		color: inherit;
+	}
+	dialog[open],
+	dialog:global([data-leaving]) {
+		display: grid;
+	}
+	dialog:global([data-leaving]) {
+		pointer-events: none;
+	}
+	dialog::backdrop {
+		background: transparent;
 	}
 	.modal {
 		box-sizing: border-box;
@@ -81,9 +98,6 @@
 		background: var(--paper);
 		color: var(--ink);
 		box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
-	}
-	.modal:focus {
-		outline: none;
 	}
 	h2 {
 		margin: 0;
