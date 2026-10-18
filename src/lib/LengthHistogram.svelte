@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Axis } from '$lib/crossword';
 	import { DURATION, fade } from '$lib/motion';
+	import { devicePixelRatio } from 'svelte/reactivity/window';
 
 	let { entries }: { entries: { axis: Axis; length: number }[] } = $props();
 
@@ -36,6 +37,45 @@
 	});
 	const modes = $derived(bins.filter((b) => b.total === peak).map((b) => b.length));
 
+	const GAP = 3;
+
+	let plotEl = $state<HTMLOListElement>();
+	let plotX = $state(0);
+	let plotW = $state(0);
+	const dpr = $derived(devicePixelRatio.current ?? 1);
+
+	$effect(() => {
+		const el = plotEl;
+		if (!el) return;
+		void dpr;
+		const measure = () => {
+			const rect = el.getBoundingClientRect();
+			plotX = rect.left;
+			plotW = rect.width;
+		};
+		measure();
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		window.addEventListener('resize', measure);
+		return () => {
+			ro.disconnect();
+			window.removeEventListener('resize', measure);
+		};
+	});
+
+	const layout = $derived.by(() => {
+		const n = bins.length;
+		if (n === 0 || plotW <= 0) return null;
+		const width = Math.floor(plotW * dpr);
+		const gap = Math.max(1, Math.round(GAP * dpr));
+		const bar = Math.floor((width - gap * (n - 1)) / n);
+		if (bar < 1) return null;
+		const used = bar * n + gap * (n - 1);
+		const left = plotX * dpr;
+		const start = Math.round(left + (width - used) / 2) - left;
+		return { start, bar, step: bar + gap };
+	});
+
 	const describe = (b: Bin) =>
 		`Length ${b.length}: ${b.total} ${b.total === 1 ? 'entry' : 'entries'}` +
 		(b.total ? ` (${b.across} across, ${b.down} down)` : '');
@@ -63,9 +103,16 @@
 					<span><i class="swatch across"></i>Across</span>
 					<span><i class="swatch down"></i>Down</span>
 				</span>
-				<ol class="plot" style:--bins={bins.length}>
-					{#each bins as b (b.length)}
-						<li class="bin" title={describe(b)} aria-label={describe(b)} in:fade>
+				<ol class="plot" class:pinned={layout} style:--bins={bins.length} bind:this={plotEl}>
+					{#each bins as b, i (b.length)}
+						<li
+							class="bin"
+							title={describe(b)}
+							aria-label={describe(b)}
+							style:left={layout ? `${(layout.start + i * layout.step) / dpr}px` : null}
+							style:width={layout ? `${layout.bar / dpr}px` : null}
+							in:fade
+						>
 							<div class="track">
 								<span class="count">{b.total || ''}</span>
 								<div
@@ -181,6 +228,15 @@
 		gap: 3px;
 		border-bottom: 1px solid rgb(255 255 255 / 0.4);
 		padding-bottom: 0;
+	}
+	.plot.pinned {
+		position: relative;
+		display: block;
+	}
+	.pinned > .bin {
+		position: absolute;
+		top: 0;
+		bottom: 0;
 	}
 	.bin {
 		min-width: 0;
