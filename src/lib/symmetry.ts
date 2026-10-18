@@ -1,4 +1,4 @@
-import { keyOf, step, type Axis, type Walls } from './crossword';
+import { AXES, keyOf, step, type Axis, type Walls } from './crossword';
 
 export type SymmetryKey =
 	'diagonal' | 'antidiagonal' | 'vertical' | 'horizontal' | 'rot180' | 'rot90';
@@ -194,7 +194,7 @@ export interface Bar {
 	axis: Axis;
 }
 
-const barKey = ({ row, col, axis }: Bar) => `${row},${col},${axis}`;
+export const barKey = ({ row, col, axis }: Bar) => `${row},${col},${axis}`;
 
 function mapBar(transform: Transform, bar: Bar, rows: number, cols: number): Bar {
 	const [nr, nc] = step(bar.row, bar.col, bar.axis);
@@ -227,8 +227,6 @@ export function barCounterparts(
 	seen.delete(start);
 	return [...seen.values()];
 }
-
-const AXES: readonly Axis[] = ['across', 'down'];
 
 export function symmetryObeyed(
 	rows: number,

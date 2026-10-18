@@ -1,6 +1,6 @@
 import { CONSTRAINTS, type ConstraintKey } from './constraints';
 import { allKeys, needsRebus, validSize, type Grid, type GridMode } from './crossword';
-import { MAX_AUTHORS, detailsOf, type Puzzle } from './ipuz';
+import { MAX_AUTHORS, detailsOf, isRecord, type Puzzle } from './ipuz';
 import { SYMMETRIES, type SymmetryKey } from './symmetry';
 
 export type Settings = {
@@ -56,9 +56,6 @@ export function saveSettings(settings: Settings) {
 		// Storage can be full, disabled or blocked; settings just won't persist.
 	}
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function readJson(key: string): unknown {
 	try {

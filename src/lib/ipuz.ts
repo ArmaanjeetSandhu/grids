@@ -1,4 +1,5 @@
 import {
+	AXES,
 	MAX_SIZE,
 	MIN_SIZE,
 	emptySquare,
@@ -88,7 +89,7 @@ const DEPENDS: Record<string, string[]> = {
 
 const ORIGIN = 'armaanjeetsandhu.github.io/grids';
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const toHtml = (text: string) =>
@@ -297,8 +298,6 @@ const field = (v: unknown, name: string) => (isRecord(v) ? v[name] : v);
 const scalar = (v: unknown) =>
 	typeof v === 'string' || typeof v === 'number' ? String(v) : undefined;
 
-const AXES: Record<string, Axis> = { across: 'across', down: 'down' };
-
 export function fromIpuz(data: unknown): Puzzle {
 	if (!isRecord(data)) throw new Error('That file isn’t a puzzle.');
 	const kinds = Array.isArray(data.kind) ? data.kind : [data.kind];
@@ -374,7 +373,8 @@ export function fromIpuz(data: unknown): Puzzle {
 	const { entries } = numberEntries(rows, cols, wallsOf(grid));
 	const clues: Record<string, string> = {};
 	for (const [direction, list] of Object.entries(isRecord(data.clues) ? data.clues : {})) {
-		const axis = AXES[direction.split(':')[0].trim().toLowerCase()];
+		const name = direction.split(':')[0].trim().toLowerCase();
+		const axis = AXES.find((a) => a === name);
 		if (!axis || !Array.isArray(list)) continue;
 		const inAxis = entries.filter((e) => e.axis === axis);
 		const numbered = (num: unknown) => {

@@ -1,10 +1,13 @@
 import {
+	AXES,
 	keyOf,
+	lattice,
 	parseKey,
 	step,
 	type Axis,
 	type Entry,
 	type GridMode,
+	type Lattice,
 	type Walls
 } from './crossword';
 
@@ -63,11 +66,11 @@ export interface Regions {
 	count: number;
 }
 
-const STEPS: readonly [number, number][] = [
-	[-1, 0],
-	[1, 0],
-	[0, -1],
-	[0, 1]
+const STEPS: readonly [number, number, Axis, boolean][] = [
+	[-1, 0, 'down', false],
+	[1, 0, 'down', true],
+	[0, -1, 'across', false],
+	[0, 1, 'across', true]
 ];
 
 const TOUCHING: readonly [number, number][] = [
@@ -81,14 +84,8 @@ const TOUCHING: readonly [number, number][] = [
 	[1, 1]
 ];
 
-function barred(row: number, col: number, dr: number, dc: number, walls: Walls): boolean {
-	if (dr === 0) return walls.bar(row, Math.min(col, col + dc), 'across');
-	return walls.bar(Math.min(row, row + dr), col, 'down');
-}
-
 export function whiteRegions(rows: number, cols: number, walls: Walls): Regions {
-	const inside = (r: number, c: number) => r >= 0 && c >= 0 && r < rows && c < cols;
-	const white = (r: number, c: number) => inside(r, c) && !walls.black(keyOf(r, c));
+	const { white, joined, joinedBefore } = lattice(rows, cols, walls);
 
 	const of = new Map<string, number>();
 	const sizes: number[] = [];
@@ -103,11 +100,10 @@ export function whiteRegions(rows: number, cols: number, walls: Walls): Regions 
 			const queue: [number, number][] = [[r, c]];
 			for (const [qr, qc] of queue) {
 				size++;
-				for (const [dr, dc] of STEPS) {
+				for (const [dr, dc, axis, ahead] of STEPS) {
+					if (!(ahead ? joined : joinedBefore)(qr, qc, axis)) continue;
 					const nr = qr + dr;
 					const nc = qc + dc;
-					if (!white(nr, nc)) continue;
-					if (barred(qr, qc, dr, dc, walls)) continue;
 					const key = keyOf(nr, nc);
 					if (of.has(key)) continue;
 					of.set(key, region);
@@ -210,15 +206,9 @@ export function regionColours(regions: Regions, rows: number, cols: number): Map
 }
 
 export function unchedSquares(rows: number, cols: number, walls: Walls): Set<string> {
-	const white = (r: number, c: number) =>
-		r >= 0 && c >= 0 && r < rows && c < cols && !walls.black(keyOf(r, c));
-
-	const joined = (r: number, c: number, axis: Axis) => {
-		const [nr, nc] = step(r, c, axis);
-		return white(r, c) && white(nr, nc) && !walls.bar(r, c, axis);
-	};
+	const { white, joined, joinedBefore } = lattice(rows, cols, walls);
 	const checked = (r: number, c: number, axis: Axis) =>
-		joined(r, c, axis) || (axis === 'across' ? joined(r, c - 1, axis) : joined(r - 1, c, axis));
+		joined(r, c, axis) || joinedBefore(r, c, axis);
 
 	const unched = new Set<string>();
 	for (let r = 0; r < rows; r++)
@@ -234,7 +224,7 @@ export function consecutiveUnches(unched: ReadonlySet<string>, walls: Walls): st
 	const sequences: string[][] = [];
 	for (const start of unched) {
 		const { row, col } = parseKey(start);
-		for (const axis of ['across', 'down'] as const) {
+		for (const axis of AXES) {
 			const [pr, pc] = axis === 'across' ? [row, col - 1] : [row - 1, col];
 			if (unched.has(keyOf(pr, pc)) && !walls.bar(pr, pc, axis)) continue;
 			const sequence = [start];
@@ -251,50 +241,32 @@ export function consecutiveUnches(unched: ReadonlySet<string>, walls: Walls): st
 	return sequences;
 }
 
-function entriesAlong(
-	row: number,
-	col: number,
-	axis: Axis,
-	rows: number,
-	cols: number,
-	walls: Walls
-): number {
-	const across = axis === 'across';
-	const length = across ? cols : rows;
-	const white = (i: number) =>
-		i >= 0 && i < length && !walls.black(across ? keyOf(row, i) : keyOf(i, col));
-	const joined = (i: number) =>
-		white(i) && white(i + 1) && !walls.bar(across ? row : i, across ? i : col, axis);
-
+function entriesAlong(row: number, col: number, axis: Axis, length: number, l: Lattice): number {
+	const at = (i: number): [number, number] => (axis === 'across' ? [row, i] : [i, col]);
 	let entries = 0;
-	for (let i = 0; i < length - 1; i++) if (joined(i) && !joined(i - 1)) entries++;
+	for (let i = 0; i < length - 1; i++)
+		if (l.joined(...at(i), axis) && !l.joinedBefore(...at(i), axis)) entries++;
 	return entries;
 }
 
 export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<string> {
-	const entriesThrough = (r: number, c: number, w: Walls) =>
-		entriesAlong(r, c, 'across', rows, cols, w) + entriesAlong(r, c, 'down', rows, cols, w);
+	const entriesThrough = (r: number, c: number, l: Lattice) =>
+		entriesAlong(r, c, 'across', cols, l) + entriesAlong(r, c, 'down', rows, l);
+	const orphaned = (r: number, c: number, l: Lattice) =>
+		AXES.every((axis) => !l.joined(r, c, axis) && !l.joinedBefore(r, c, axis));
 
-	const white = (r: number, c: number, w: Walls) =>
-		r >= 0 && c >= 0 && r < rows && c < cols && !w.black(keyOf(r, c));
-	const joined = (r: number, c: number, axis: Axis, w: Walls) => {
-		const [nr, nc] = step(r, c, axis);
-		return white(r, c, w) && white(nr, nc, w) && !w.bar(r, c, axis);
-	};
-	const orphaned = (r: number, c: number, w: Walls) =>
-		!joined(r, c, 'across', w) &&
-		!joined(r, c - 1, 'across', w) &&
-		!joined(r, c, 'down', w) &&
-		!joined(r - 1, c, 'down', w);
-
+	const closed = lattice(rows, cols, walls);
 	const cheaters = new Set<string>();
 	for (let r = 0; r < rows; r++)
 		for (let c = 0; c < cols; c++) {
 			const key = keyOf(r, c);
 			if (!walls.black(key)) continue;
-			const opened: Walls = { black: (k) => k !== key && walls.black(k), bar: walls.bar };
+			const opened = lattice(rows, cols, {
+				black: (k) => k !== key && walls.black(k),
+				bar: walls.bar
+			});
 			if (orphaned(r, c, opened)) continue;
-			if (entriesThrough(r, c, opened) === entriesThrough(r, c, walls)) cheaters.add(key);
+			if (entriesThrough(r, c, opened) === entriesThrough(r, c, closed)) cheaters.add(key);
 		}
 	return cheaters;
 }

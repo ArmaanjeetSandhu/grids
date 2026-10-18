@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { flip } from 'svelte/animate';
+	import { devicePixelRatio } from 'svelte/reactivity/window';
 	import Halftone from '$lib/Halftone.svelte';
 	import LengthHistogram from '$lib/LengthHistogram.svelte';
 	import Modal from '$lib/Modal.svelte';
@@ -225,9 +226,7 @@
 		const a = document.createElement('a');
 		a.href = url;
 		a.download = fileName(title);
-		document.body.append(a);
 		a.click();
-		a.remove();
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
 
@@ -502,18 +501,7 @@
 	let stageH = $state(600);
 	let input = $state<HTMLInputElement>();
 
-	let dpr = $state(1);
-	$effect(() => {
-		let mq: MediaQueryList | undefined;
-		const update = () => {
-			mq?.removeEventListener('change', update);
-			dpr = window.devicePixelRatio || 1;
-			mq = matchMedia(`(resolution: ${dpr}dppx)`);
-			mq.addEventListener('change', update);
-		};
-		update();
-		return () => mq?.removeEventListener('change', update);
-	});
+	const dpr = $derived(devicePixelRatio.current ?? 1);
 
 	const room: { w: number; h: number } = $derived.by(() => {
 		const side = narrow ? 0 : panelW + PANEL_GAP;

@@ -87,8 +87,28 @@ export const wallsOf = (grid: Grid): Walls => ({
 	bar: (row, col, axis) => grid[keyOf(row, col)][barField(axis)]
 });
 
+export const AXES: readonly Axis[] = ['across', 'down'];
+
 export const step = (row: number, col: number, axis: Axis): [number, number] =>
 	axis === 'across' ? [row, col + 1] : [row + 1, col];
+
+export interface Lattice {
+	white: (row: number, col: number) => boolean;
+	joined: (row: number, col: number, axis: Axis) => boolean;
+	joinedBefore: (row: number, col: number, axis: Axis) => boolean;
+}
+
+export function lattice(rows: number, cols: number, walls: Walls): Lattice {
+	const white = (r: number, c: number) =>
+		r >= 0 && c >= 0 && r < rows && c < cols && !walls.black(keyOf(r, c));
+	const joined = (r: number, c: number, axis: Axis) => {
+		const [nr, nc] = step(r, c, axis);
+		return white(r, c) && white(nr, nc) && !walls.bar(r, c, axis);
+	};
+	const joinedBefore = (r: number, c: number, axis: Axis) =>
+		axis === 'across' ? joined(r, c - 1, axis) : joined(r - 1, c, axis);
+	return { white, joined, joinedBefore };
+}
 
 export function runFrom(
 	start: string,
@@ -157,16 +177,7 @@ export function transposeEntryId(id: string): string {
 }
 
 export function numberEntries(rows: number, cols: number, walls: Walls): Numbering {
-	const white = (r: number, c: number) =>
-		r >= 0 && c >= 0 && r < rows && c < cols && !walls.black(keyOf(r, c));
-
-	const joined = (r: number, c: number, axis: Axis) => {
-		const [nr, nc] = step(r, c, axis);
-		return white(r, c) && white(nr, nc) && !walls.bar(r, c, axis);
-	};
-	const joinedBefore = (r: number, c: number, axis: Axis) =>
-		axis === 'across' ? joined(r, c - 1, axis) : joined(r - 1, c, axis);
-
+	const { white, joined, joinedBefore } = lattice(rows, cols, walls);
 	const numbers = new Map<string, number>();
 	const entries: Entry[] = [];
 	for (let r = 0; r < rows; r++) {

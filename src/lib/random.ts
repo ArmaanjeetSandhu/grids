@@ -6,9 +6,20 @@ import {
 	whiteRegions,
 	type ConstraintKey
 } from './constraints';
-import { allKeys, keyOf, parseKey, step, type Axis, type GridMode, type Walls } from './crossword';
+import {
+	AXES,
+	allKeys,
+	keyOf,
+	lattice,
+	parseKey,
+	step,
+	type Axis,
+	type GridMode,
+	type Walls
+} from './crossword';
 import {
 	barCounterparts,
+	barKey,
 	counterparts,
 	describeSymmetry,
 	symmetryObeyed,
@@ -58,6 +69,7 @@ interface Runs {
 function runLengths(rows: number, cols: number, walls: Walls): Runs {
 	const across = new Int16Array(rows * cols);
 	const down = new Int16Array(rows * cols);
+	const { white } = lattice(rows, cols, walls);
 	let entries = 0;
 	let letters = 0;
 	const sweep = (axis: Axis, lines: number, length: number, out: Int16Array) => {
@@ -66,13 +78,12 @@ function runLengths(rows: number, cols: number, walls: Walls): Runs {
 			let start = 0;
 			for (let i = 0; i < length; i++) {
 				const [r, c] = at(line, i);
-				if (walls.black(keyOf(r, c))) {
+				if (!white(r, c)) {
 					start = i + 1;
 					continue;
 				}
 				const [nr, nc] = step(r, c, axis);
-				const ends = i === length - 1 || walls.black(keyOf(nr, nc)) || walls.bar(r, c, axis);
-				if (!ends) continue;
+				if (white(nr, nc) && !walls.bar(r, c, axis)) continue;
 				const len = i - start + 1;
 				for (let j = start; j <= i; j++) {
 					const [jr, jc] = at(line, j);
@@ -294,8 +305,6 @@ export interface BarOptions {
 	random?: () => number;
 }
 
-const barKey = ({ row, col, axis }: Bar) => `${row},${col},${axis}`;
-
 export function randomBars(o: BarOptions): Bar[] {
 	const { rows, cols, rules } = o;
 	const seen = new Set<string>();
@@ -316,7 +325,7 @@ export function randomBars(o: BarOptions): Bar[] {
 
 	for (let r = 0; r < rows; r++)
 		for (let c = 0; c < cols; c++)
-			for (const axis of ['across', 'down'] as const) {
+			for (const axis of AXES) {
 				const bar: Bar = { row: r, col: c, axis };
 				const [nr, nc] = step(r, c, axis);
 				if (nr >= rows || nc >= cols || seen.has(barKey(bar))) continue;
@@ -334,7 +343,7 @@ export function randomBars(o: BarOptions): Bar[] {
 		orbits,
 		walls: (placed) => ({
 			black: o.walls.black,
-			bar: (row, col, axis) => o.walls.bar(row, col, axis) || placed.has(`${row},${col},${axis}`)
+			bar: (row, col, axis) => o.walls.bar(row, col, axis) || placed.has(barKey({ row, col, axis }))
 		}),
 		weight: (orbit, runs) =>
 			orbit.reduce((w, k) => {
