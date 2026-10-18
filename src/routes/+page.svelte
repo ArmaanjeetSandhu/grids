@@ -318,6 +318,7 @@
 	let selection = $state<string[]>([]);
 	let painting = false;
 	let barStroke: boolean | null = null;
+	let selectStroke: boolean | null = null;
 
 	let chosenSymmetry = $state<SymmetryKey[]>([]);
 	let symmetryOpen = $state(false);
@@ -1003,6 +1004,7 @@
 		if (e.button !== 0) return;
 		if (isMac ? e.metaKey : e.ctrlKey) {
 			toggleSelected(key);
+			selectStroke = grid[key].black || selection.includes(key);
 			return;
 		}
 		selection = [];
@@ -1045,6 +1047,11 @@
 
 	function onCellEnter(e: PointerEvent, key: string) {
 		hoverKey = key;
+		if (selectStroke !== null) {
+			if (e.buttons & 1 && !grid[key].black && selection.includes(key) !== selectStroke)
+				toggleSelected(key);
+			return;
+		}
 		if (!bars && painting && e.buttons & 1) paint(key);
 	}
 
@@ -1215,10 +1222,11 @@
 		if (painting) commit();
 		painting = false;
 		barStroke = null;
+		selectStroke = null;
 	}
 
 	function onWindowPointerMove(e: PointerEvent) {
-		if (!painting || e.pointerType === 'mouse') return;
+		if ((!painting && selectStroke === null) || e.pointerType === 'mouse') return;
 		const hit = document
 			.elementFromPoint(e.clientX, e.clientY)
 			?.closest('[data-cell], [data-edge]');
@@ -1658,8 +1666,9 @@
 							oninput={onInput}
 							oncompositionstart={() => (composing = true)}
 							oncompositionend={onCompositionEnd}
-							onblur={() => {
+							onblur={(e) => {
 								composing = false;
+								if (document.activeElement === e.currentTarget) return;
 								closeEditor();
 							}}
 						/>
