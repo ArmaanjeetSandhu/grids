@@ -7,6 +7,7 @@ import {
 	keyOf,
 	needsRebus,
 	numberEntries,
+	upperValue,
 	validSize,
 	wallsOf,
 	type Axis,
@@ -353,12 +354,12 @@ export function fromIpuz(data: unknown): Puzzle {
 			const answers: unknown = solution[r];
 			const value = field(Array.isArray(answers) ? answers[c] : undefined, 'value');
 			const filled = scalar(value)?.trim() ?? '';
-			const letter = black || filled === empty || filled === block ? '' : filled;
+			const letter = black || filled === empty || filled === block ? '' : upperValue(filled);
 			const here = sides(r, c);
 			grid[key] = {
 				...emptySquare(),
 				black,
-				letter: letter.toLocaleUpperCase(),
+				letter,
 				barRight: c + 1 < cols && (here.includes('R') || sides(r, c + 1).includes('L')),
 				barBottom: r + 1 < rows && (here.includes('B') || sides(r + 1, c).includes('T')),
 				circled: !black && circledAt(r, c),

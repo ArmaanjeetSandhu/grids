@@ -27,6 +27,13 @@ export const isRebusChar = (ch: string) => REBUS_CHAR.test(ch);
 
 export const needsRebus = (value: string) => value !== '' && !isLetter(value);
 
+export const upperChar = (ch: string) => {
+	const upper = ch.toUpperCase();
+	return [...upper].length === 1 ? upper : ch;
+};
+
+export const upperValue = (value: string) => [...value].map(upperChar).join('');
+
 export const validSize = (n: unknown): n is number =>
 	typeof n === 'number' && Number.isInteger(n) && n >= MIN_SIZE && n <= MAX_SIZE;
 

@@ -26,6 +26,8 @@
 		transposeEntryId,
 		transposeGrid,
 		transposeKey,
+		upperChar,
+		upperValue,
 		validSize,
 		wallsOf,
 		type Axis,
@@ -164,7 +166,7 @@
 	const clueSet = $derived(
 		new Set([...clueLists.across, ...clueLists.down].find((c) => c.id === activeClue)?.keys ?? [])
 	);
-	const clueText = (c: ClueRow) => clues[c.id] ?? `Clue for ${c.word}`;
+	const cluePlaceholder = (c: ClueRow) => `Clue for ${c.word}`;
 
 	function showPage(page: 'clues' | 'details') {
 		cluePage = page;
@@ -258,18 +260,14 @@
 			issues.push(`${plural(vacant, 'white square is', 'white squares are')} still empty.`);
 		if (!title.trim())
 			issues.push(`The puzzle has no title. File will be saved as ${fileName('')}.`);
-		const placeholders = [...clueLists.across, ...clueLists.down].filter((c) => {
-			const text = clues[c.id]?.trim();
-			return !text || text === `Clue for ${c.word}`;
-		}).length;
-		if (placeholders)
-			issues.push(
-				`${plural(placeholders, 'clue still has', 'clues still have')} placeholder text.`
-			);
+		const unclued = [...clueLists.across, ...clueLists.down].filter(
+			(c) => !clues[c.id]?.trim()
+		).length;
+		if (unclued) issues.push(`${plural(unclued, 'clue is', 'clues are')} still empty.`);
 		const entries = numbering?.entries ?? [];
 		const answers = entries
 			.filter((e) => e.keys.every((k) => grid[k].letter))
-			.map((e) => e.keys.map((k) => grid[k].letter.toLocaleUpperCase()).join(''));
+			.map((e) => e.keys.map((k) => upperValue(grid[k].letter)).join(''));
 		const repeated = [...new Set(answers.filter((a, i) => answers.indexOf(a) !== i))];
 		if (repeated.length)
 			issues.push(
@@ -1107,7 +1105,7 @@
 
 	function enter(key: string, ch: string): boolean {
 		const sq = grid[key];
-		const value = ch.toLocaleUpperCase();
+		const value = upperChar(ch);
 		if (sq.rebus) {
 			if (!isRebusChar(ch)) return false;
 			if ([...sq.letter].length < REBUS_MAX) sq.letter += value;
@@ -1768,7 +1766,8 @@
 														<textarea
 															id="clue-{c.id}"
 															rows="1"
-															value={clueText(c)}
+															value={clues[c.id] ?? ''}
+															placeholder={cluePlaceholder(c)}
 															aria-label="{c.number} {title}, {c.word}"
 															spellcheck="true"
 															oninput={(e) => (clues[c.id] = e.currentTarget.value)}
@@ -2262,7 +2261,8 @@
 		transition: border-color var(--t-quick) var(--ease-out);
 	}
 	.author-row input::placeholder,
-	.details textarea::placeholder {
+	.details textarea::placeholder,
+	.clues textarea::placeholder {
 		color: var(--on-mat-dim);
 	}
 	.author-row input:hover {
