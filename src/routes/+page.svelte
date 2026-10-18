@@ -1232,6 +1232,17 @@
 		barStroke = null;
 	}
 
+	function onWindowPointerMove(e: PointerEvent) {
+		if (!painting || e.pointerType === 'mouse') return;
+		const hit = document
+			.elementFromPoint(e.clientX, e.clientY)
+			?.closest('[data-cell], [data-edge]');
+		if (!(hit instanceof SVGElement)) return;
+		const { cell, edge } = hit.dataset;
+		if (cell) onCellEnter(e, cell);
+		else if (edge) onBarEnter(e, edges[Number(edge)]);
+	}
+
 	function onWindowPointerDown(e: PointerEvent) {
 		noteArea(e.target);
 	}
@@ -1321,7 +1332,9 @@
 	onkeydown={onWindowKey}
 	onpointerdown={onWindowPointerDown}
 	onfocusin={(e) => noteArea(e.target)}
+	onpointermove={onWindowPointerMove}
 	onpointerup={onWindowPointerUp}
+	onpointercancel={onWindowPointerUp}
 />
 
 <main class="mat">
@@ -1556,6 +1569,7 @@
 									class:linked={linkedSet.has(key)}
 									class:run={runSet.has(key) || clueSet.has(key)}
 									class:caret={multi ? selectedSet.has(key) : key === caretKey}
+									data-cell={key}
 									onpointerdown={(e) => onCellDown(e, key)}
 									onpointerenter={(e) => onCellEnter(e, key)}
 								/>
@@ -1626,11 +1640,12 @@
 								<path class="bars" d={barsPath} />
 							{/if}
 
-							{#each edges as e (`${e.row},${e.col},${e.axis}`)}
+							{#each edges as e, i (`${e.row},${e.col},${e.axis}`)}
 								{@const across = e.axis === 'across'}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<rect
 									class="grab"
+									data-edge={i}
 									x={across ? e.col + 1 - GRAB : e.col + GRAB}
 									y={across ? e.row : e.row + 1 - GRAB}
 									width={across ? GRAB * 2 : 1 - GRAB * 2}
@@ -2386,7 +2401,7 @@
 	}
 	.sheet {
 		position: relative;
-		touch-action: manipulation;
+		touch-action: pinch-zoom;
 		user-select: none;
 		-webkit-user-select: none;
 	}

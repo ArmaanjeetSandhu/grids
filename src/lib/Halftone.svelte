@@ -16,7 +16,7 @@
 		const k = Math.min(dpr, Math.sqrt(MAX_PIXELS / (w * h)));
 		const W = (el.width = Math.round(w * k));
 		const H = (el.height = Math.round(h * k));
-		const ctx = el.getContext('2d', { willReadFrequently: true });
+		const ctx = el.getContext('2d');
 		if (!ctx) return;
 		const image = ctx.createImageData(W, H);
 		const data = image.data;
