@@ -1176,6 +1176,16 @@
 			selection = [];
 			const n = editing.keys.length;
 			editing.idx = editing.anchor = (editing.idx + (e.key === back ? n - 1 : 1)) % n;
+		} else if (e.key === 'Home' || e.key === 'End') {
+			e.preventDefault();
+			const home = e.key === 'Home';
+			if (e.shiftKey) {
+				const { keys, idx } = editing;
+				selection = home ? keys.slice(0, idx + 1) : keys.slice(idx);
+			} else {
+				selection = [];
+				editing.idx = editing.anchor = home ? 0 : editing.keys.length - 1;
+			}
 		} else if (typeable(e.key) && !e.ctrlKey && !e.metaKey) {
 			e.preventDefault();
 			typeLetter(e.key);
