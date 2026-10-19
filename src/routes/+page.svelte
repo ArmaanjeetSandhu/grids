@@ -487,8 +487,6 @@
 			: [...chosenConstraints, key];
 	}
 
-	let winW = $state(1200);
-	const narrow = $derived(winW <= 640);
 	const PANEL_GAP = 24;
 	const GUTTER = { x: 4, y: 4 };
 
@@ -498,17 +496,30 @@
 
 	const dpr = $derived(devicePixelRatio.current ?? 1);
 
-	const room: { w: number; h: number } = $derived.by(() => {
-		const side = narrow ? 0 : panelW + PANEL_GAP;
-		const below = narrow ? panelH + PANEL_GAP : 0;
-		return { w: stageW - 48 - side - GUTTER.x, h: stageH - 48 - below - GUTTER.y };
+	const STACK_GAP = 16;
+	const STACK_PANEL_MIN = 160;
+	const STACK_PAD = { x: 16, y: 20 };
+
+	const sidePanelW = $derived(Math.round(Math.min(384, Math.max(200, stageW * 0.3))));
+	const sideRoom = $derived({
+		w: stageW - 48 - sidePanelW - PANEL_GAP - GUTTER.x,
+		h: stageH - 48 - GUTTER.y
+	});
+	const stackRoom = $derived({
+		w: stageW - 48 - GUTTER.x,
+		h: stageH - 2 * STACK_PAD.y - GUTTER.y - STACK_GAP - STACK_PANEL_MIN
 	});
 
-	const cellDev = $derived.by(() => {
+	function fitCell(r: { w: number; h: number }) {
 		if (!size) return Math.round(32 * dpr);
-		const fit = Math.min(room.w / size.cols, room.h / size.rows);
+		const fit = Math.min(r.w / size.cols, r.h / size.rows);
 		return Math.max(Math.round(12 * dpr), Math.min(Math.round(64 * dpr), Math.floor(fit * dpr)));
-	});
+	}
+
+	const stacked = $derived(fitCell(stackRoom) > fitCell(sideRoom));
+	const room = $derived(stacked ? stackRoom : sideRoom);
+
+	const cellDev = $derived(fitCell(room));
 	const cell = $derived(cellDev / dpr);
 	const labelSize = $derived(Math.max(9, Math.min(13, cell * 0.34)));
 
@@ -611,10 +622,13 @@
 		};
 	});
 
-	const panelW = $derived(
-		narrow ? Math.max(0, stageW - 48) : Math.round(Math.min(384, Math.max(256, stageW * 0.3)))
-	);
-	const panelH = $derived(narrow ? Math.round(stageH * 0.4) : size ? size.rows * cell : 0);
+	const panelW = $derived(stacked ? Math.max(0, stageW - 2 * STACK_PAD.x) : sidePanelW);
+	const panelH = $derived.by(() => {
+		if (!size) return 0;
+		if (!stacked) return size.rows * cell;
+		const left = stageH - 2 * STACK_PAD.y - GUTTER.y - size.rows * cell - STACK_GAP;
+		return Math.max(STACK_PANEL_MIN, Math.floor(left));
+	});
 
 	const multi = $derived(selection.length > 0);
 	const selectedSet = $derived(new Set(selection));
@@ -1406,7 +1420,6 @@
 </svelte:head>
 
 <svelte:window
-	bind:innerWidth={winW}
 	onkeydown={onWindowKey}
 	onpointerdown={onWindowPointerDown}
 	onfocusin={(e) => noteArea(e.target)}
@@ -1531,7 +1544,7 @@
 									<circle class="pip" cx="8" cy="8" r="1.3" />
 									<circle class="pip" cx="10.4" cy="10.4" r="1.3" />
 								</svg>
-								Random
+								<span class="chip-label">Random</span>
 							</button>
 						{/if}
 
@@ -1546,7 +1559,7 @@
 								<path d="M12.5 4.5h-7M8 2 5.5 4.5 8 7" />
 								<path d="M4.5 12.5v-7M2 8l2.5-2.5L7 8" />
 							</svg>
-							Transpose
+							<span class="chip-label">Transpose</span>
 						</button>
 
 						<button
@@ -1560,7 +1573,7 @@
 							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 								<path d="M2.5 13.5h11M4 13.5v-4M7 13.5V4M10 13.5V7M13 13.5v-2" />
 							</svg>
-							Stats
+							<span class="chip-label">Stats</span>
 						</button>
 
 						<button
@@ -1572,7 +1585,7 @@
 							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 								<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
 							</svg>
-							Download
+							<span class="chip-label">Download</span>
 						</button>
 					</div>
 				</div>
@@ -1581,7 +1594,7 @@
 			<div class="stage" bind:clientWidth={stageW} bind:clientHeight={stageH}>
 				<div
 					class="layout"
-					class:narrow
+					class:stacked
 					class:away={statsOpen}
 					inert={statsOpen}
 					bind:this={layoutEl}
@@ -1764,7 +1777,7 @@
 						class="clue-sheet"
 						style:width="{panelW}px"
 						style:height="{panelH}px"
-						style:margin-top={narrow ? null : `${GUTTER.y}px`}
+						style:margin-top={stacked ? null : `${GUTTER.y}px`}
 					>
 						<aside
 							class="clues"
@@ -2170,9 +2183,10 @@
 		align-items: flex-start;
 		gap: 24px;
 	}
-	.layout.narrow {
+	.layout.stacked {
 		flex-direction: column;
 		align-items: center;
+		gap: 16px;
 	}
 	.layout {
 		transition:
@@ -2210,6 +2224,7 @@
 
 	.clue-sheet {
 		--curl: 1.6rem;
+		container-type: inline-size;
 		flex: 0 0 auto;
 		position: relative;
 	}
@@ -2662,7 +2677,55 @@
 	@media (max-width: 640px) {
 		.bar {
 			position: relative;
-			padding: 0.75rem 0.75rem 0.25rem;
+			padding: 0.5rem 0 0.25rem;
+		}
+		.row,
+		.tools {
+			flex-wrap: nowrap;
+			justify-content: flex-start;
+		}
+		.row {
+			min-width: 0;
+		}
+		.tools {
+			min-width: 0;
+			flex: 1;
+			overflow-x: auto;
+			padding: 0 0.75rem;
+			gap: 0.4rem;
+		}
+		.tools > :first-child {
+			margin-left: auto;
+		}
+		.tools > :last-child {
+			margin-right: auto;
+		}
+		.tools > :global(*) {
+			flex: 0 0 auto;
+		}
+		:global(.mat .chip) {
+			white-space: nowrap;
+		}
+		.chip-label {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+	}
+
+	@container (max-width: 250px) {
+		.clues {
+			grid-template-columns: 1fr;
+			gap: 0.5rem;
+		}
+	}
+	@media (max-width: 480px) {
+		.clues {
+			grid-template-columns: 1fr;
+			gap: 0.5rem;
 		}
 	}
 

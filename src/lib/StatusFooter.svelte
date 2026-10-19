@@ -158,6 +158,20 @@
 		.status {
 			padding: var(--status-pad) 0.75rem;
 			font-size: 0.72rem;
+			flex-wrap: nowrap;
+			justify-content: flex-start;
+			overflow-x: auto;
+		}
+		.status > :first-child {
+			margin-left: auto;
+		}
+		.status > :last-child {
+			margin-right: auto;
+		}
+		.status-cell,
+		.status-group {
+			flex: 0 0 auto;
+			flex-wrap: nowrap;
 		}
 		.status-split {
 			display: none;
