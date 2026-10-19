@@ -1107,10 +1107,42 @@
 			for (const k of selection) enter(k, ch);
 			return;
 		}
-		const key = editing.keys[editing.idx];
+		const { keys, idx } = editing;
+		const key = keys[idx];
+		const filled = () => keys.every((k) => grid[k].letter);
+		const wasFilled = filled();
 		if (!enter(key, ch) || grid[key].rebus) return;
-		const next = (editing.idx + 1) % editing.keys.length;
-		if (next !== editing.anchor) editing.idx = next;
+		if (filled() && (!wasFilled || idx === keys.length - 1)) {
+			const following = nextVacancy(keys);
+			if (following) {
+				editing = following;
+				return;
+			}
+		}
+		const next = nextTypingIdx(editing);
+		if (next !== null) editing.idx = next;
+	}
+
+	function nextVacancy(keys: string[]) {
+		const entries = (numbering?.entries ?? []).filter((e) => e.axis === axis);
+		const i = entries.findIndex((e) => e.keys[0] === keys[0]);
+		if (i < 0) return null;
+		for (let j = 1; j < entries.length; j++) {
+			const entry = entries[(i + j) % entries.length].keys;
+			const idx = entry.findIndex((k) => !grid[k].letter);
+			if (idx >= 0) return { keys: entry, idx, anchor: idx };
+		}
+		const entry = entries[(i + 1) % entries.length].keys;
+		return { keys: entry, idx: 0, anchor: 0 };
+	}
+
+	function nextTypingIdx({ keys, idx, anchor }: { keys: string[]; idx: number; anchor: number }) {
+		const n = keys.length;
+		const step = (i: number) => (i + 1) % n;
+		for (let i = step(idx); i !== anchor && i !== idx; i = step(i))
+			if (!grid[keys[i]].letter) return i;
+		const next = step(idx);
+		return next !== anchor ? next : null;
 	}
 
 	function typeable(ch: string) {
