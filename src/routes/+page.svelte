@@ -874,6 +874,12 @@
 
 	let confirmRandomOpen = $state(false);
 	let confirmRandomLetters = $state(false);
+	let confirmRandomCircles = $state(false);
+	const confirmRandomCleared = $derived(
+		[confirmRandomLetters && 'the entered letters', confirmRandomCircles && 'the circles']
+			.filter(Boolean)
+			.join(' and ')
+	);
 	let randomSetOpen = $state(false);
 
 	const randomRulesNow = $derived(
@@ -889,6 +895,7 @@
 		if (brokenRules(size.rows, size.cols, walls, rules).length === 0)
 			return randomise(rules, false);
 		confirmRandomLetters = cells.some(({ key }) => grid[key].letter !== '');
+		confirmRandomCircles = cells.some(({ key }) => grid[key].circled);
 		confirmRandomOpen = true;
 	}
 
@@ -915,10 +922,12 @@
 				sq.barRight = false;
 				sq.barBottom = false;
 				sq.letter = '';
+				sq.circled = false;
 				sq.rebus = false;
 			}
 		const ws = wallsOf(next);
 		const lettered = (key: string) => next[key].letter !== '';
+		const marked = (key: string) => lettered(key) || next[key].circled || next[key].rebus;
 
 		if (bars) {
 			const { lo, hi } = barTarget(rows, cols);
@@ -939,7 +948,7 @@
 			const limit = blockLimit(rows, cols);
 			const black = Object.values(next).filter((sq) => sq.black).length;
 			if (black >= limit) return showRandomSet();
-			const added = randomBlocks({ rows, cols, walls: ws, rules, limit, locked: lettered });
+			const added = randomBlocks({ rows, cols, walls: ws, rules, limit, locked: marked });
 			if (added.length === 0 && !fresh) return showRandomSet();
 			for (const k of added) {
 				next[k].black = true;
@@ -1948,8 +1957,8 @@
 	{#if confirmRandomOpen}
 		<Modal title="Are you sure?" onclose={() => closeConfirmRandom(false)}>
 			<p>
-				This will generate a new grid. Existing {bars ? 'bars' : 'blocks'} will be removed{confirmRandomLetters
-					? ', along with the entered letters'
+				This will generate a new grid. Existing {bars ? 'bars' : 'blocks'} will be removed{confirmRandomCleared
+					? `, along with ${confirmRandomCleared}`
 					: ''}.
 			</p>
 			{#snippet actions()}
