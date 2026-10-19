@@ -1136,6 +1136,28 @@
 		return { keys: entry, idx: 0, anchor: 0 };
 	}
 
+	function jumpEntry(step: 1 | -1) {
+		if (!editing) return;
+		const all = numbering?.entries ?? [];
+		const ordered = [
+			...all.filter((e) => e.axis === 'across'),
+			...all.filter((e) => e.axis === 'down')
+		];
+		if (ordered.length === 0) return;
+		const start = editing.keys[0];
+		const i = ordered.findIndex((e) => e.axis === axis && e.keys[0] === start);
+		const n = ordered.length;
+		const j = i < 0 ? (step > 0 ? 0 : n - 1) : (i + step + n) % n;
+		const entry = ordered[j];
+		const idx = Math.max(
+			0,
+			entry.keys.findIndex((k) => !grid[k].letter)
+		);
+		axis = entry.axis;
+		selection = [];
+		editing = { keys: entry.keys, idx, anchor: idx };
+	}
+
 	function nextTypingIdx({ keys, idx, anchor }: { keys: string[]; idx: number; anchor: number }) {
 		const n = keys.length;
 		const step = (i: number) => (i + 1) % n;
@@ -1208,6 +1230,9 @@
 		} else if (e.key === 'Enter') {
 			e.preventDefault();
 			toggleDirection();
+		} else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			e.preventDefault();
+			jumpEntry(e.shiftKey ? -1 : 1);
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
 			input?.blur();
@@ -1519,6 +1544,7 @@
 							class="chip"
 							class:on={statsOpen}
 							aria-pressed={statsOpen}
+							onmousedown={keepFocus}
 							onclick={toggleStats}
 							title={statsOpen ? 'Back to the grid' : 'Show a histogram of entry lengths'}
 						>
@@ -1735,6 +1761,7 @@
 							class="clues"
 							class:on-details={cluePage === 'details'}
 							aria-label={cluePage === 'details' ? 'Puzzle details' : 'Clues'}
+							tabindex="-1"
 							bind:this={cluesEl}
 						>
 							<div class="title-field" bind:this={titleFieldEl}>
@@ -1750,6 +1777,14 @@
 									onkeydown={blurOn(['Enter', 'Escape'])}
 								/>
 							</div>
+							<button
+								type="button"
+								class="page-curl"
+								class:left={cluePage === 'details'}
+								aria-label={cluePage === 'details' ? 'Back to clues' : 'Turn to puzzle details'}
+								title={cluePage === 'details' ? 'Back to clues' : 'Puzzle details'}
+								onclick={() => showPage(cluePage === 'details' ? 'clues' : 'details')}
+							></button>
 							{#if cluePage === 'details'}
 								<section class="details" aria-label="Puzzle details">
 									<div class="detail" role="group" aria-labelledby="details-by">
@@ -1850,14 +1885,6 @@
 								{/each}
 							{/if}
 						</aside>
-						<button
-							type="button"
-							class="page-curl"
-							class:left={cluePage === 'details'}
-							aria-label={cluePage === 'details' ? 'Back to clues' : 'Turn to puzzle details'}
-							title={cluePage === 'details' ? 'Back to clues' : 'Puzzle details'}
-							onclick={() => showPage(cluePage === 'details' ? 'clues' : 'details')}
-						></button>
 					</div>
 				</div>
 				{#if statsOpen}
