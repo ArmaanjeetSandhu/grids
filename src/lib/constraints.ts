@@ -249,11 +249,18 @@ function entriesAlong(row: number, col: number, axis: Axis, length: number, l: L
 	return entries;
 }
 
-export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<string> {
+export function cheaterSquares(
+	rows: number,
+	cols: number,
+	walls: Walls,
+	noUnches = false
+): Set<string> {
 	const entriesThrough = (r: number, c: number, l: Lattice) =>
 		entriesAlong(r, c, 'across', cols, l) + entriesAlong(r, c, 'down', rows, l);
 	const orphaned = (r: number, c: number, l: Lattice) =>
 		AXES.every((axis) => !l.joined(r, c, axis) && !l.joinedBefore(r, c, axis));
+	const unched = (r: number, c: number, l: Lattice) =>
+		AXES.some((axis) => !l.joined(r, c, axis) && !l.joinedBefore(r, c, axis));
 
 	const closed = lattice(rows, cols, walls);
 	const cheaters = new Set<string>();
@@ -266,6 +273,7 @@ export function cheaterSquares(rows: number, cols: number, walls: Walls): Set<st
 				bar: walls.bar
 			});
 			if (orphaned(r, c, opened)) continue;
+			if (noUnches && unched(r, c, opened)) continue;
 			if (entriesThrough(r, c, opened) === entriesThrough(r, c, closed)) cheaters.add(key);
 		}
 	return cheaters;

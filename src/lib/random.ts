@@ -148,7 +148,8 @@ function brokenConstraints(
 		broken.push('consecutiveUnches');
 		if (done()) return broken;
 	}
-	if (held.has('cheaters') && cheaterSquares(rows, cols, walls).size > 0) broken.push('cheaters');
+	if (held.has('cheaters') && cheaterSquares(rows, cols, walls, held.has('unches')).size > 0)
+		broken.push('cheaters');
 	return broken;
 }
 
