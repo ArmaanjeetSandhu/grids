@@ -419,7 +419,9 @@
 	const flashing = $derived(unched ?? consecutive);
 	const flagCheaters = $derived(activeConstraints.includes('cheaters'));
 	const cheaters = $derived(
-		size && flagCheaters ? cheaterSquares(size.rows, size.cols, walls, noUnches) : null
+		size && flagCheaters
+			? cheaterSquares(size.rows, size.cols, walls, noUnches, noConsecutiveUnches)
+			: null
 	);
 	const flagTwoLetters = $derived(activeConstraints.includes('twoLetters'));
 	const twoLetters = $derived(

@@ -253,7 +253,8 @@ export function cheaterSquares(
 	rows: number,
 	cols: number,
 	walls: Walls,
-	noUnches = false
+	noUnches = false,
+	noConsecutiveUnches = false
 ): Set<string> {
 	const entriesThrough = (r: number, c: number, l: Lattice) =>
 		entriesAlong(r, c, 'across', cols, l) + entriesAlong(r, c, 'down', rows, l);
@@ -261,6 +262,15 @@ export function cheaterSquares(
 		AXES.every((axis) => !l.joined(r, c, axis) && !l.joinedBefore(r, c, axis));
 	const unched = (r: number, c: number, l: Lattice) =>
 		AXES.some((axis) => !l.joined(r, c, axis) && !l.joinedBefore(r, c, axis));
+	const nextToUnch = (r: number, c: number, l: Lattice) =>
+		AXES.some((axis) => {
+			const [nr, nc] = step(r, c, axis);
+			const [pr, pc] = axis === 'across' ? [r, c - 1] : [r - 1, c];
+			return (
+				(l.white(nr, nc) && !walls.bar(r, c, axis) && unched(nr, nc, l)) ||
+				(l.white(pr, pc) && !walls.bar(pr, pc, axis) && unched(pr, pc, l))
+			);
+		});
 
 	const closed = lattice(rows, cols, walls);
 	const cheaters = new Set<string>();
@@ -274,6 +284,7 @@ export function cheaterSquares(
 			});
 			if (orphaned(r, c, opened)) continue;
 			if (noUnches && unched(r, c, opened)) continue;
+			if (noConsecutiveUnches && unched(r, c, opened) && nextToUnch(r, c, opened)) continue;
 			if (entriesThrough(r, c, opened) === entriesThrough(r, c, closed)) cheaters.add(key);
 		}
 	return cheaters;
