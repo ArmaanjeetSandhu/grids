@@ -35,7 +35,6 @@
 		const mid = sorted.length >> 1;
 		return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 	});
-	const modes = $derived(bins.filter((b) => b.total === peak).map((b) => b.length));
 
 	const GAP = 3;
 
@@ -88,7 +87,6 @@
 			<p class="summary">
 				<span>mean <b>{mean.toFixed(2)}</b></span>
 				<span>median <b>{median}</b></span>
-				<span>{modes.length > 1 ? 'modes' : 'mode'} <b>{modes.join(', ')}</b></span>
 			</p>
 		{/if}
 	</header>

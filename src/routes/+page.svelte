@@ -332,6 +332,8 @@
 			: null
 	);
 
+	const diagonalObeyed = $derived(symmetric === true && activeSymmetry.includes('diagonal'));
+
 	function toggleSymmetry(key: SymmetryKey) {
 		const option = symmetry.find((s) => s.key === key);
 		if (!option || !option.available || option.impliedBy) return;
@@ -1280,8 +1282,11 @@
 				selection = next === idx ? [] : keys.slice(Math.min(idx, next), Math.max(idx, next) + 1);
 			} else {
 				selection = [];
-				const n = editing.keys.length;
-				editing.idx = editing.anchor = (editing.idx + (e.key === back ? n - 1 : 1)) % n;
+				const last = editing.keys.length - 1;
+				editing.idx = editing.anchor = Math.max(
+					0,
+					Math.min(last, editing.idx + (e.key === back ? -1 : 1))
+				);
 			}
 		} else if (e.key === 'Home' || e.key === 'End') {
 			e.preventDefault();
@@ -1550,19 +1555,21 @@
 							</button>
 						{/if}
 
-						<button
-							class="chip"
-							onmousedown={keepFocus}
-							onclick={transpose}
-							title="Flip the grid about its main diagonal"
-						>
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-								<path d="M2.5 2.5l11 11" stroke-dasharray="2 2.2" />
-								<path d="M12.5 4.5h-7M8 2 5.5 4.5 8 7" />
-								<path d="M4.5 12.5v-7M2 8l2.5-2.5L7 8" />
-							</svg>
-							<span class="chip-label">Transpose</span>
-						</button>
+						{#if !diagonalObeyed}
+							<button
+								class="chip"
+								onmousedown={keepFocus}
+								onclick={transpose}
+								title="Flip the grid about its main diagonal"
+							>
+								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+									<path d="M2.5 2.5l11 11" stroke-dasharray="2 2.2" />
+									<path d="M12.5 4.5h-7M8 2 5.5 4.5 8 7" />
+									<path d="M4.5 12.5v-7M2 8l2.5-2.5L7 8" />
+								</svg>
+								<span class="chip-label">Transpose</span>
+							</button>
+						{/if}
 
 						<button
 							class="chip"
